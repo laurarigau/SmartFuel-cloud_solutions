@@ -36,3 +36,6 @@ data/processed/*
 # IDE
 .idea/
 .vscode/
+
+# Generated Lambda dependencies
+infra/ingestion/package/
