@@ -1,3 +1,4 @@
+
 name: checks
 
 # Runs on every PR and push to main. Needs NO AWS credentials:
@@ -23,32 +24,41 @@ jobs:
       fail-fast: false
       matrix:
         stack: [core, ingestion, processing, ml-alerts, web-api]
+
     defaults:
       run:
         working-directory: infra/${{ matrix.stack }}
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+
       - name: fmt
         run: terraform fmt -check -diff
+
       - name: init (no backend)
         run: terraform init -backend=false -input=false
+
       - name: validate
         run: terraform validate
 
   lambdas:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: unit tests
         run: |
           if compgen -G "src/lambdas/*/test_*.py" > /dev/null; then
-            pip install -q pytest boto3 pandas pyarrow
+            pip install -q pytest boto3 pandas pyarrow requests
             pytest -q src/lambdas
           else
             echo "No Lambda tests yet"
