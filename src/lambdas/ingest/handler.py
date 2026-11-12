@@ -1,31 +1,58 @@
 
 import json
 import os
+import time
 from datetime import datetime
 
 import boto3
 import requests
 
-API_URL = (
+# Same data on two Ministry servers. "serviciosmin" answers reliably from AWS;
+# "minetur" often resets connections coming from the cloud, so it is only a fallback.
+API_URLS = [
+    "https://energia.serviciosmin.gob.es/"
+    "ServiciosRestCarburantes/PreciosCarburantes/"
+    "EstacionesTerrestres/",
     "https://sedeaplicaciones.minetur.gob.es/"
     "ServiciosRESTCarburantes/PreciosCarburantes/"
-    "EstacionesTerrestres/"
-)
+    "EstacionesTerrestres/",
+]
+
+# If both servers fail, wait and try again (longer each time).
+MAX_ATTEMPTS = 4
+BACKOFF_SECONDS = [5, 15, 30]
 
 s3 = boto3.client("s3")
+
+
+def download_with_retries():
+    last_error = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        for url in API_URLS:
+            try:
+                response = requests.get(
+                    url,
+                    headers={"User-Agent": "SmartFuelForecast/1.0"},
+                    timeout=(10, 60)
+                )
+                response.raise_for_status()
+                print(f"Downloaded from {url} (attempt {attempt})")
+                return response
+            except (requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout,
+                    requests.exceptions.HTTPError) as error:
+                last_error = error
+                print(f"Attempt {attempt}/{MAX_ATTEMPTS} failed for {url}: {error}")
+        if attempt < MAX_ATTEMPTS:
+            time.sleep(BACKOFF_SECONDS[attempt - 1])
+    raise last_error
 
 
 def lambda_handler(event, context):
     bucket_name = os.environ["LAKE_BUCKET"]
 
-    # 1. Request the fuel-price data from the Ministry API
-    response = requests.get(
-        API_URL,
-        headers={"User-Agent": "SmartFuelForecast/1.0"},
-        timeout=(10, 60)
-    )
-
-    response.raise_for_status()
+    # 1. Request the fuel-price data from the Ministry API (with retries)
+    response = download_with_retries()
 
     # 2. Keep the original API response unchanged
     raw_data = response.content
