@@ -9,7 +9,7 @@ terraform {
   }
 
   # Partial configuration: bucket/key/region are passed with -backend-config
-  # (see backend.hcl.example and .github/workflows/terraform.yml)
+  # (scripts/deploy.sh passes them)
   backend "s3" {}
 }
 
