@@ -68,3 +68,60 @@ def test_lambda_handler_uploads_raw_data(monkeypatch):
     assert uploaded["Key"] == "raw/2026/11/12/0900.json"
     assert uploaded["Body"] == original_json
     assert uploaded["ContentType"] == "application/json"
+
+
+def test_download_retries_after_connection_reset(monkeypatch):
+    monkeypatch.setattr(handler.time, "sleep", lambda seconds: None)
+
+    class OkResponse:
+        def raise_for_status(self):
+            pass
+
+    calls = []
+
+    def flaky_get(url, headers, timeout):
+        calls.append(1)
+        if len(calls) < 3:
+            raise handler.requests.exceptions.ConnectionError("Connection reset by peer")
+        return OkResponse()
+
+    monkeypatch.setattr(handler.requests, "get", flaky_get)
+
+    assert isinstance(handler.download_with_retries(), OkResponse)
+    assert len(calls) == 3  # server 1 fails, server 2 fails, server 1 (attempt 2) works
+
+
+def test_download_falls_back_to_second_server(monkeypatch):
+    monkeypatch.setattr(handler.time, "sleep", lambda seconds: None)
+
+    class OkResponse:
+        def raise_for_status(self):
+            pass
+
+    urls = []
+
+    def first_server_down(url, headers, timeout):
+        urls.append(url)
+        if "serviciosmin" in url:
+            raise handler.requests.exceptions.ConnectionError("Connection reset by peer")
+        return OkResponse()
+
+    monkeypatch.setattr(handler.requests, "get", first_server_down)
+
+    handler.download_with_retries()
+    assert "serviciosmin" in urls[0] and "minetur" in urls[1]
+
+
+def test_download_gives_up_after_max_attempts(monkeypatch):
+    monkeypatch.setattr(handler.time, "sleep", lambda seconds: None)
+
+    def always_fails(url, headers, timeout):
+        raise handler.requests.exceptions.ConnectionError("Connection reset by peer")
+
+    monkeypatch.setattr(handler.requests, "get", always_fails)
+
+    try:
+        handler.download_with_retries()
+        assert False, "should have raised"
+    except handler.requests.exceptions.ConnectionError:
+        pass

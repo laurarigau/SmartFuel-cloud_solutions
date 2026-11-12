@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 
 # Deploy the whole SmartFuel project or selected stacks.
