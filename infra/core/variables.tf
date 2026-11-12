@@ -11,7 +11,7 @@ variable "project" {
 }
 
 variable "suffix" {
-  description = "Unique suffix for globally-named resources (S3). Use the shared sandbox's value."
+  description = "Unique suffix for S3 bucket names. scripts/deploy.sh sets it to the AWS account id."
   type        = string
 }
 

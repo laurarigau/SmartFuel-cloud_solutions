@@ -4,51 +4,79 @@ Serverless, event-driven AWS solution that collects Spain's fuel prices (Ministr
 
 Cloud Solutions project — Carla Escassi, Marc Farràs, Laura Rigau, Marta Palet.
 
+## How we work: the same project in 4 sandboxes
+
+Each of us deploys the **whole project** in our own university sandbox. Nobody shares credentials.
+GitHub only holds the code: the pipeline checks it (fmt, validate, tests) but does not deploy.
+Bucket names include the AWS account id, so the 4 copies never collide.
+
+```
+GitHub (code + checks)
+   │  git pull
+   ├── Carla's sandbox   ← ./scripts/deploy.sh
+   ├── Marc's sandbox    ← ./scripts/deploy.sh
+   ├── Laura's sandbox   ← ./scripts/deploy.sh
+   └── Marta's sandbox   ← ./scripts/deploy.sh
+```
+
 ## Repository layout
 
 ```
 infra/
-  bootstrap/     # one-off: Terraform state bucket + GitHub secrets
-  core/          # shared: S3 lake, DynamoDB tables, SNS topics, DLQ
+  core/          # shared resources: S3 lake, DynamoDB tables, SNS topics, DLQ
   ingestion/     # Phase A · Scheduler, ingest Lambda, Glue/Athena, monitoring
   processing/    # Phase B · S3 event rule, Step Functions, validate/clean/save/predict
   ml-alerts/     # Phase C · weekly retraining, Streams -> Lambda -> SNS -> Lambda -> SES
   web-api/       # Phase D · Cognito, HTTP API, API Lambdas, Amplify
+scripts/
+  deploy.sh      # deploy all (or some) stacks to YOUR sandbox
+  destroy.sh     # remove everything from YOUR sandbox
+  exploration/   # first API exploration scripts
 src/lambdas/     # one folder per Lambda: handler.py + test_handler.py
 frontend/        # static web app (map)
 ml/              # notebook for model v0
 fixtures/        # small sample files for tests (raw_sample.json = 50 real stations)
-scripts/         # exploration scripts
 docs/contracts.md
 ```
 
-Each folder in `infra/` is its own Terraform stack with its own state (`<stack>/terraform.tfstate`), so four people can deploy at the same time. Phase stacks read the shared resources from `core` (`local.core.lake_bucket`, `local.core.tables.stations`, ...).
+Each folder in `infra/` is its own Terraform stack with its own state (`<stack>/terraform.tfstate` in `smartfuel-tfstate-<account-id>`). Phase stacks read the shared resources from `core` (`local.core.lake_bucket`, `local.core.tables.stations`, ...).
 
-## Phase 0 setup (once)
+## Deploy to your sandbox
 
-1. Start the shared sandbox, copy its credentials and run:
-   ```bash
-   export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_SESSION_TOKEN=...
-   gh auth login
-   ./infra/bootstrap/bootstrap.sh
-   ```
-   It creates the state bucket and sets the GitHub variables `TF_STATE_BUCKET`, `SUFFIX` and the three AWS secrets.
-2. GitHub → Settings → Actions → General → Workflow permissions → **Read and write** (needed to comment plans on PRs).
-3. GitHub → Settings → Branches → protect `main`: require a pull request with 1 approval and the `terraform` checks passing.
-4. Merge the Phase 0 PR → the pipeline applies `core`.
+Requirements: AWS CLI, Terraform ≥ 1.10.
 
-**Every new sandbox session:** credentials expire, so whoever starts it runs `./infra/bootstrap/update_secrets.sh`.
+```bash
+# 1. Start your sandbox and load its credentials (they expire every session)
+export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_SESSION_TOKEN=...
 
-## Workflow
+# 2. Get the latest code
+git pull
+
+# 3. Deploy
+./scripts/deploy.sh                  # everything, in order (core first)
+./scripts/deploy.sh processing       # only one stack
+./scripts/deploy.sh --plan web-api   # see what would change
+```
+
+The first run creates the state bucket automatically. To clean up: `./scripts/destroy.sh`.
+
+## Git workflow
 
 - Branch per task: `a/ingest-lambda`, `b/state-machine`, `c/retraining`, `d/cognito`...
-- Open a PR to `main`: the pipeline runs `fmt`, Lambda tests, `validate` and `plan` for every stack and comments the plans.
-- Another member reviews → merge → the pipeline applies `core`, then the four phase stacks.
-- Never `terraform apply` locally on someone else's stack.
+- Test in your sandbox with `./scripts/deploy.sh <your-stack>` before opening the PR.
+- Open a PR to `main`; the `checks` workflow must pass and another member reviews.
+- After a merge, everyone runs `git pull && ./scripts/deploy.sh` to update their copy.
+- Changing something in `core` or `docs/contracts.md` affects everyone: say it in the PR.
+
+Protect `main` in GitHub → Settings → Branches: require a PR, 1 approval and the `checks` workflow.
+
+## Demo sandbox
+
+All 4 copies collect data, but pick **one** sandbox for the demo (the one whose ingestion has run the longest without gaps) and train the final model there.
 
 ## Sandbox checks (day 1)
 
-- [ ] Can we create IAM roles, or must we use a pre-created role?
+- [ ] Can we create IAM roles, or must we use the pre-created role (e.g. `LabRole`)?
 - [ ] Are EventBridge Scheduler, Step Functions, Athena/Glue, Cognito, Amplify, SES and Budgets available?
-- [ ] Do the Scheduler and Lambdas keep running when no session is open?
-- [ ] How long do credentials last?
+- [ ] Do the Scheduler and Lambdas keep running when the session is closed?
+- [ ] Back up `raw/` weekly outside AWS (`aws s3 sync`): university accounts can be reset.

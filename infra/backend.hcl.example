@@ -1,8 +1,0 @@
-# Copy to infra/backend.hcl (git-ignored) for local runs:
-#   cd infra/<stack>
-#   terraform init -backend-config=../backend.hcl -backend-config="key=<stack>/terraform.tfstate"
-#   terraform plan -var="state_bucket=<bucket>"        # core also needs -var="suffix=<suffix>"
-# Never apply locally on a stack that is not yours: let the pipeline do it.
-bucket       = "smartfuel-tfstate-<suffix>"
-region       = "us-east-1"
-use_lockfile = true
