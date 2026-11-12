@@ -1,11 +1,14 @@
-
 # Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
+build/
+*.zip
 
 # Credentials
+credentials
 .env
 .env.*
 !.env.example
@@ -13,11 +16,19 @@ venv/
 *.key
 
 # Terraform
-.terraform/
+**/.terraform/
 *.tfstate
 *.tfstate.*
 *.tfplan
+tfplan
+plan.txt
 crash.log
+infra/backend.hcl
+*.tfvars
+
+# Local data snapshots (use fixtures/ for samples)
+data/raw/*
+data/processed/*
 
 # Mac
 .DS_Store
@@ -25,7 +36,3 @@ crash.log
 # IDE
 .idea/
 .vscode/
-
-# Temporary files
-*.swp
-*.tmp
