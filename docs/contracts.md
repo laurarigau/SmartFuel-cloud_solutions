@@ -10,6 +10,7 @@ people affected. `<suffix>` = your AWS account id (set by `scripts/deploy.sh`). 
 | `raw/YYYY/MM/DD/HHmm.json` | Ministry API response, untouched (`Fecha`, `ListaEESSPrecio`, ...) | A · ingest | B · validate |
 | `quarantine/<same key>` | Raw files that failed validation | B · validate | admins |
 | `clean/date=YYYY-MM-DD/HHmm.parquet` | One row per station × fuel (schema below) | B · clean | C (Athena), B (diff) |
+| `changes/date=YYYY-MM-DD/HHmm.jsonl.gz` | Only new/changed prices vs the previous snapshot (one JSON per line; new stations carry their details). Too big to pass through Step Functions (256 KB) | B · clean | B · save-changes |
 | `models/production/model.joblib` + `metadata.json` | Current model | C | B · predict |
 | `models/candidates/<timestamp>/` | Models from weekly retraining | C | C |
 | `athena-results/` | Athena query output (expires after 7 days) | Athena | C |
@@ -23,7 +24,7 @@ Raw object keys use the API's `Fecha` field (Spain time), as in `scripts/explora
 | `station_id` | string | `IDEESS` |
 | `fuel_type` | string | `gasolina_95_e5`, `gasolina_98_e5`, `gasoleo_a`, `gasoleo_premium`, `glp` |
 | `price_eur` | double | `Precio ...` (comma decimal → dot; empty → row dropped) |
-| `ts` | timestamp | `Fecha` |
+| `ts` | timestamp (ms, Spain local time, no tz) | `Fecha` |
 | `station_name` | string | `Rótulo` |
 | `municipality`, `province` | string | `Municipio`, `Provincia` |
 | `lat`, `lon` | double | `Latitud`, `Longitud (WGS84)` (comma decimal) |
