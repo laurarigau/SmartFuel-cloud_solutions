@@ -1,7 +1,18 @@
-
+import importlib.util
 import json
+from pathlib import Path
 
-import handler
+# Load the ingestion handler directly from its file.
+# This avoids conflicts with other Lambda files named handler.py.
+handler_path = Path(__file__).with_name("handler.py")
+
+spec = importlib.util.spec_from_file_location(
+    "ingest_handler",
+    handler_path
+)
+
+handler = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(handler)
 
 
 def test_lambda_handler_uploads_raw_data(monkeypatch):
