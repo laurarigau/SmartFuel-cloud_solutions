@@ -1,0 +1,119 @@
+:root {
+  --ink: #14202e;
+  --muted: #5b6675;
+  --line: #e2e7ee;
+  --bg: #f5f7fa;
+  --brand: #0b6680;
+  --brand-dark: #084c5f;
+  --down: #1b7f3b;
+  --up: #b3261e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand { display: flex; gap: 12px; align-items: center; }
+.logo { font-size: 28px; }
+.brand h1 { margin: 0; font-size: 20px; }
+.brand p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+
+.controls { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.controls select, .controls button {
+  font: inherit;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  min-height: 40px;
+}
+.controls button {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+  cursor: pointer;
+}
+.controls button:hover { background: var(--brand-dark); }
+
+.layout {
+  display: flex;
+  flex-wrap: wrap;
+  height: calc(100vh - 69px);
+}
+
+#map { flex: 999 1 560px; min-height: 420px; }
+
+.panel {
+  flex: 1 1 340px;
+  max-width: 100%;
+  padding: 16px 20px;
+  overflow-y: auto;
+  background: #fff;
+  border-left: 1px solid var(--line);
+}
+
+.status {
+  font-size: 14px;
+  color: var(--muted);
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.status.error { color: var(--up); background: #fdecea; }
+
+.detail { position: relative; }
+.hidden { display: none; }
+.close {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  border: none;
+  background: none;
+  font-size: 24px;
+  color: var(--muted);
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+}
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand);
+}
+.detail h2 { margin: 4px 40px 6px 0; font-size: 20px; }
+.detail h3 { margin: 20px 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.muted { color: var(--muted); font-size: 14px; margin: 2px 0; }
+
+.prices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.price {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.price .fuel { font-size: 12px; color: var(--muted); }
+.price .value { font-size: 20px; font-weight: 600; }
+.price .value small { font-size: 12px; font-weight: 400; color: var(--muted); }
+
+.leaflet-popup-content { font-family: inherit; font-size: 14px; }
+.popup-name { font-weight: 600; }
+.popup-link { color: var(--brand); cursor: pointer; text-decoration: underline; background: none; border: none; padding: 0; font: inherit; }

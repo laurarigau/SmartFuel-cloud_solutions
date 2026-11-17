@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SmartFuel Forecast</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">⛽</span>
+      <div>
+        <h1>SmartFuel Forecast</h1>
+        <p>Precios de carburantes en España y su previsión</p>
+      </div>
+    </div>
+    <div class="controls">
+      <label for="city">Ir a</label>
+      <select id="city">
+        <option value="">Elige una ciudad…</option>
+        <option value="40.4168,-3.7038">Madrid</option>
+        <option value="41.3874,2.1686">Barcelona</option>
+        <option value="39.4699,-0.3763">Valencia</option>
+        <option value="37.3891,-5.9845">Sevilla</option>
+        <option value="43.2630,-2.9350">Bilbao</option>
+        <option value="41.6488,-0.8891">Zaragoza</option>
+        <option value="36.7213,-4.4214">Málaga</option>
+      </select>
+      <button id="locate" type="button">Mi ubicación</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div id="map" aria-label="Mapa de gasolineras"></div>
+
+    <aside class="panel" aria-live="polite">
+      <div id="status" class="status">Acerca el mapa a una zona para ver sus gasolineras.</div>
+
+      <section id="detail" class="detail hidden">
+        <button id="close-detail" class="close" type="button" aria-label="Cerrar">×</button>
+        <p class="eyebrow" id="d-brand"></p>
+        <h2 id="d-name"></h2>
+        <p class="muted" id="d-address"></p>
+        <p class="muted" id="d-hours"></p>
+
+        <h3>Precios actuales</h3>
+        <div id="d-prices" class="prices"></div>
+
+        <h3>Previsión</h3>
+        <div id="d-prediction" class="muted">Disponible cuando el modelo esté en marcha.</div>
+      </section>
+    </aside>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="config.js"></script>
+  <script src="geohash.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
