@@ -1,11 +1,14 @@
-# Outputs of the shared stack (bucket, tables, topics, DLQ).
-# Use them as local.core.<output>, e.g. local.core.lake_bucket, local.core.tables.stations
+# Read the shared Core infrastructure outputs.
+# AWS resources are deployed in us-east-1.
+# Terraform state is stored in eu-north-1.
+
 data "terraform_remote_state" "core" {
   backend = "s3"
+
   config = {
     bucket = var.state_bucket
-    key    = "core/terraform.tfstate"
-    region = var.region
+    key    = "${var.region}/core/terraform.tfstate"
+    region = "eu-north-1"
   }
 }
 

@@ -1,3 +1,4 @@
+
 # Shared resources used by every phase. Names follow docs/contracts.md.
 
 locals {
@@ -7,6 +8,7 @@ locals {
 # ---------------------------------------------------------------------------
 # S3 data lake: raw/, clean/, quarantine/, models/, athena-results/
 # ---------------------------------------------------------------------------
+
 resource "aws_s3_bucket" "lake" {
   bucket = "${local.name}-lake-${var.suffix}"
 }
@@ -21,6 +23,7 @@ resource "aws_s3_bucket_public_access_block" "lake" {
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "lake" {
   bucket = aws_s3_bucket.lake.id
+
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
@@ -30,6 +33,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "lake" {
 
 resource "aws_s3_bucket_versioning" "lake" {
   bucket = aws_s3_bucket.lake.id
+
   versioning_configuration {
     status = "Enabled" # keeps previous models/ if a bad one is promoted
   }
@@ -41,9 +45,11 @@ resource "aws_s3_bucket_lifecycle_configuration" "lake" {
   rule {
     id     = "raw-to-glacier"
     status = "Enabled"
+
     filter {
       prefix = "raw/"
     }
+
     transition {
       days          = var.raw_to_glacier_days
       storage_class = "GLACIER"
@@ -53,9 +59,11 @@ resource "aws_s3_bucket_lifecycle_configuration" "lake" {
   rule {
     id     = "expire-athena-results"
     status = "Enabled"
+
     filter {
       prefix = "athena-results/"
     }
+
     expiration {
       days = 7
     }
@@ -64,7 +72,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "lake" {
   rule {
     id     = "expire-old-versions"
     status = "Enabled"
+
     filter {}
+
     noncurrent_version_expiration {
       noncurrent_days = 30
     }
@@ -82,10 +92,12 @@ data "aws_iam_policy_document" "lake_tls_only" {
       aws_s3_bucket.lake.arn,
       "${aws_s3_bucket.lake.arn}/*",
     ]
+
     principals {
       type        = "*"
       identifiers = ["*"]
     }
+
     condition {
       test     = "Bool"
       variable = "aws:SecureTransport"
@@ -109,6 +121,7 @@ resource "aws_s3_bucket_notification" "lake" {
 # ---------------------------------------------------------------------------
 # DynamoDB (on-demand)
 # ---------------------------------------------------------------------------
+
 resource "aws_dynamodb_table" "stations" {
   name         = "${local.name}-stations"
   billing_mode = "PAY_PER_REQUEST"
@@ -118,6 +131,7 @@ resource "aws_dynamodb_table" "stations" {
     name = "station_id"
     type = "S"
   }
+
   attribute {
     name = "geohash5"
     type = "S"
@@ -146,6 +160,7 @@ resource "aws_dynamodb_table" "latest_prices" {
     name = "station_id"
     type = "S"
   }
+
   attribute {
     name = "fuel_type"
     type = "S"
@@ -166,6 +181,7 @@ resource "aws_dynamodb_table" "predictions" {
     name = "station_fuel"
     type = "S"
   }
+
   attribute {
     name = "date"
     type = "S"
@@ -191,12 +207,13 @@ resource "aws_dynamodb_table" "subscriptions" {
     name = "user_id"
     type = "S"
   }
+
   attribute {
     name = "station_fuel"
     type = "S"
   }
 
-  # phase C: "who follows this station?"
+  # Phase C: "who follows this station?"
   global_secondary_index {
     name            = "station_fuel-index"
     hash_key        = "station_fuel"
@@ -210,25 +227,35 @@ resource "aws_dynamodb_table" "subscriptions" {
 
 # ---------------------------------------------------------------------------
 # Messaging: SNS topics + dead-letter queue
+# Disabled when enable_messaging = false
+# (unavailable in the university AWS Sandbox)
 # ---------------------------------------------------------------------------
+
 resource "aws_sns_topic" "admin_alerts" {
+  count = var.enable_messaging ? 1 : 0
+
   name              = "${local.name}-admin-alerts"
   kms_master_key_id = "alias/aws/sns"
 }
 
 resource "aws_sns_topic_subscription" "admin_email" {
-  for_each  = toset(var.admin_emails)
-  topic_arn = aws_sns_topic.admin_alerts.arn
+  for_each = var.enable_messaging ? toset(var.admin_emails) : toset([])
+
+  topic_arn = aws_sns_topic.admin_alerts[0].arn
   protocol  = "email"
   endpoint  = each.value
 }
 
 resource "aws_sns_topic" "price_alerts" {
+  count = var.enable_messaging ? 1 : 0
+
   name              = "${local.name}-price-alerts"
   kms_master_key_id = "alias/aws/sns"
 }
 
 resource "aws_sqs_queue" "dlq" {
+  count = var.enable_messaging ? 1 : 0
+
   name                      = "${local.name}-dlq"
   message_retention_seconds = 1209600 # 14 days
   sqs_managed_sse_enabled   = true
