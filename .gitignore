@@ -39,3 +39,5 @@ data/processed/*
 
 # Generated Lambda dependencies
 infra/ingestion/package/
+# Frontend: each member points to their own API
+frontend/config.js
