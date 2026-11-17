@@ -68,9 +68,10 @@ resource "aws_iam_role_policy" "check_alerts" {
         Action = ["dynamodb:Query"]
 
         Resource = [
-          "arn:aws:dynamodb:${var.region}:${data.aws_caller_identity.current.account_id}:table/${var.project}-subscriptions",
-          "arn:aws:dynamodb:${var.region}:${data.aws_caller_identity.current.account_id}:table/${var.project}-subscriptions/index/station_fuel-index"
+          local.core.table_arns.subscriptions,
+          "${local.core.table_arns.subscriptions}/index/station_fuel-index"
         ]
+
       },
       {
         Effect = "Allow"
@@ -104,7 +105,7 @@ resource "aws_lambda_function" "check_alerts" {
 
   environment {
     variables = {
-      SUBSCRIPTIONS_TABLE = "${var.project}-subscriptions"
+      SUBSCRIPTIONS_TABLE = local.core.tables.subscriptions
     }
   }
 
