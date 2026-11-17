@@ -28,7 +28,7 @@ FEATURES = [
     "price_vs_province",
 ]
 
-def train_model(input_folder=None, s3_bucket=None, s3_prefix="raw/"):
+def train_model(input_folder=None, s3_bucket=None, s3_prefix="raw/", upload_s3_bucket=None):
     # 1. Load historical data
     if s3_bucket:
         print("Loading historical data from AWS S3...")
@@ -193,6 +193,34 @@ def train_model(input_folder=None, s3_bucket=None, s3_prefix="raw/"):
     print("\nCandidate saved to:", output_dir)
 
 
+    # 9. Optionally upload candidate to AWS S3
+    if upload_s3_bucket:
+        import boto3
+        from uuid import uuid4
+
+        s3 = boto3.client("s3", region_name="us-east-1")
+
+        run_id = (
+            datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            + "-" + uuid4().hex[:8]
+        )
+
+        prefix = f"models/candidates/{run_id}/"
+
+        for filename in ["model.joblib", "metadata.json"]:
+            s3.upload_file(
+                str(output_dir / filename),
+                upload_s3_bucket,
+                prefix + filename
+            )
+
+        print(
+            "Candidate uploaded to:",
+            f"s3://{upload_s3_bucket}/{prefix}"
+        )
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -201,11 +229,12 @@ if __name__ == "__main__":
     source.add_argument("--s3-bucket")
 
     parser.add_argument("--s3-prefix", default="raw/")
-
+    parser.add_argument("--upload-s3-bucket")
     args = parser.parse_args()
 
     train_model(
-        input_folder=args.input,
-        s3_bucket=args.s3_bucket,
-        s3_prefix=args.s3_prefix
-    )
+    input_folder=args.input,
+    s3_bucket=args.s3_bucket,
+    s3_prefix=args.s3_prefix,
+    upload_s3_bucket=args.upload_s3_bucket
+)
