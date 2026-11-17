@@ -133,9 +133,38 @@ function renderPrices(prices) {
   }
 }
 
+const DIRECTION_LABELS = {
+  up: { text: "Subirá", cls: "up" },
+  down: { text: "Bajará", cls: "down" },
+  flat: { text: "Se mantendrá", cls: "flat" },
+};
+
+function renderPredictions(predictions) {
+  const box = document.getElementById("d-prediction");
+  box.replaceChildren();
+  const entries = Object.entries(predictions || {});
+  if (entries.length === 0) {
+    box.textContent = "Todavía no hay previsión para esta estación (la calculará el modelo).";
+    return;
+  }
+  for (const [fuel, p] of entries) {
+    const row = document.createElement("div");
+    row.className = "prediction";
+    const label = document.createElement("span");
+    label.textContent = FUEL_LABELS[fuel] || fuel;
+    const dir = DIRECTION_LABELS[p.direction] || { text: p.direction, cls: "flat" };
+    const value = document.createElement("span");
+    value.className = `direction ${dir.cls}`;
+    value.textContent = p.prob != null ? `${dir.text} (${Math.round(p.prob * 100)}%)` : dir.text;
+    row.append(label, value);
+    box.append(row);
+  }
+}
+
 async function showDetail(stationId) {
   detailEl.classList.remove("hidden");
   document.getElementById("d-name").textContent = "Cargando…";
+  document.getElementById("d-prediction").textContent = "Cargando…";
   try {
     const s = await fetchJson(`stations/${encodeURIComponent(stationId)}`);
     document.getElementById("d-brand").textContent = s.province || "Gasolinera";
@@ -146,6 +175,13 @@ async function showDetail(stationId) {
   } catch (err) {
     document.getElementById("d-name").textContent = "No se ha podido cargar la estación";
     document.getElementById("d-address").textContent = err.message;
+    return;
+  }
+  try {
+    const pred = await fetchJson(`predictions/${encodeURIComponent(stationId)}`);
+    renderPredictions(pred.predictions);
+  } catch (err) {
+    document.getElementById("d-prediction").textContent = "No se ha podido cargar la previsión.";
   }
 }
 

@@ -3,10 +3,12 @@
 Routes:
     GET /stations?geohash=sp3e3   -> stations in that ~5x5 km cell
     GET /stations/{id}            -> one station + its latest prices
+    GET /predictions/{id}         -> latest prediction for each fuel of a station
 
 Environment variables (set by Terraform):
     STATIONS_TABLE   smartfuel-stations
     PRICES_TABLE     smartfuel-latest-prices
+    PREDICTIONS_TABLE smartfuel-predictions
 """
 import json
 import os
@@ -30,6 +32,19 @@ def tables():
         _dynamodb.Table(os.environ["STATIONS_TABLE"]),
         _dynamodb.Table(os.environ["PRICES_TABLE"]),
     )
+
+
+# Fuel types used in the keys of the predictions table ("<station_id>#<fuel_type>"),
+# as defined in docs/contracts.md
+FUEL_TYPES = ["gasolina_95_e5", "gasolina_98_e5", "gasoleo_a", "gasoleo_premium", "glp"]
+
+
+def predictions_table():
+    """Predictions table. Separate function so tests can replace it."""
+    global _dynamodb
+    if _dynamodb is None:
+        _dynamodb = boto3.resource("dynamodb")
+    return _dynamodb.Table(os.environ["PREDICTIONS_TABLE"])
 
 
 def _json_default(value):
@@ -75,10 +90,33 @@ def get_station(station_id):
     return response(200, station)
 
 
+def get_predictions(station_id):
+    """Latest prediction of each fuel. Empty until phase B writes predictions."""
+    table = predictions_table()
+    predictions = {}
+    for fuel in FUEL_TYPES:
+        items = table.query(
+            KeyConditionExpression=Key("station_fuel").eq(f"{station_id}#{fuel}"),
+            ScanIndexForward=False,  # newest date first
+            Limit=1,
+        )["Items"]
+        if items:
+            item = items[0]
+            predictions[fuel] = {
+                "date": item.get("date"),
+                "direction": item.get("direction"),
+                "prob": item.get("prob"),
+                "model_version": item.get("model_version"),
+            }
+    return response(200, {"station_id": station_id, "predictions": predictions})
+
+
 def lambda_handler(event, context):
     route = event.get("routeKey", "")
     if route == "GET /stations":
         return list_stations(event.get("queryStringParameters"))
     if route == "GET /stations/{id}":
         return get_station(event["pathParameters"]["id"])
+    if route == "GET /predictions/{id}":
+        return get_predictions(event["pathParameters"]["id"])
     return response(404, {"error": f"Unknown route {route}"})

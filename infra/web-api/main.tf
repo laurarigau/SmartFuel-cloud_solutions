@@ -7,7 +7,7 @@
 # TODO:
 #   [ ] Cognito User Pool + app client + group "admins" (create ONCE: the sandbox cannot delete pools)
 #   [ ] JWT authorizer on private routes: GET/POST/DELETE /subscriptions, /admin/*
-#   [ ] GET /predictions/{id}
+#   [x] GET /predictions/{id}
 #   [ ] Hosting for frontend/ (Amplify, pending sandbox permissions)
 
 locals {
@@ -41,6 +41,12 @@ data "aws_iam_policy_document" "api" {
       local.core.table_arns.stations,
       "${local.core.table_arns.stations}/index/geohash5-index",
     ]
+  }
+
+  statement {
+    sid       = "ReadPredictions"
+    actions   = ["dynamodb:Query"]
+    resources = [local.core.table_arns.predictions]
   }
 
   statement {
@@ -89,8 +95,9 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      STATIONS_TABLE = local.core.tables.stations
-      PRICES_TABLE   = local.core.tables.latest_prices
+      STATIONS_TABLE    = local.core.tables.stations
+      PRICES_TABLE      = local.core.tables.latest_prices
+      PREDICTIONS_TABLE = local.core.tables.predictions
     }
   }
 
@@ -127,6 +134,12 @@ resource "aws_apigatewayv2_route" "list_stations" {
 resource "aws_apigatewayv2_route" "get_station" {
   api_id    = aws_apigatewayv2_api.http.id
   route_key = "GET /stations/{id}"
+  target    = "integrations/${aws_apigatewayv2_integration.api.id}"
+}
+
+resource "aws_apigatewayv2_route" "get_predictions" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "GET /predictions/{id}"
   target    = "integrations/${aws_apigatewayv2_integration.api.id}"
 }
 

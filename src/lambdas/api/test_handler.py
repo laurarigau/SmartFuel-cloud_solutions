@@ -67,3 +67,37 @@ def test_unknown_route(monkeypatch):
     use_fakes(monkeypatch, [])
     status, _ = call("POST /nothing")
     assert status == 404
+
+
+class FakePredictions:
+    def __init__(self, items):
+        self.items = items
+        self.queries = []
+
+    def query(self, KeyConditionExpression, ScanIndexForward, Limit):
+        key = KeyConditionExpression.get_expression()["values"][1]
+        self.queries.append(key)
+        found = sorted([i for i in self.items if i["station_fuel"] == key], key=lambda i: i["date"], reverse=True)
+        return {"Items": found[:Limit]}
+
+
+def test_predictions_latest_per_fuel(monkeypatch):
+    fake = FakePredictions([
+        {"station_fuel": "4375#gasoleo_a", "date": "2026-11-16", "direction": "up", "prob": Decimal("0.61"), "model_version": "v0"},
+        {"station_fuel": "4375#gasoleo_a", "date": "2026-11-17", "direction": "down", "prob": Decimal("0.72"), "model_version": "v0"},
+        {"station_fuel": "4375#gasolina_95_e5", "date": "2026-11-17", "direction": "flat", "prob": Decimal("0.55"), "model_version": "v0"},
+    ])
+    monkeypatch.setattr(handler, "predictions_table", lambda: fake)
+    status, body = call("GET /predictions/{id}", path={"id": "4375"})
+    assert status == 200
+    assert body["predictions"]["gasoleo_a"] == {"date": "2026-11-17", "direction": "down", "prob": 0.72, "model_version": "v0"}
+    assert body["predictions"]["gasolina_95_e5"]["direction"] == "flat"
+    assert "glp" not in body["predictions"]
+    assert len(fake.queries) == len(handler.FUEL_TYPES)
+
+
+def test_predictions_empty_when_none(monkeypatch):
+    monkeypatch.setattr(handler, "predictions_table", lambda: FakePredictions([]))
+    status, body = call("GET /predictions/{id}", path={"id": "999"})
+    assert status == 200
+    assert body == {"station_id": "999", "predictions": {}}
