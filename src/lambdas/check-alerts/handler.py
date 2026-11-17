@@ -153,10 +153,18 @@ def lambda_handler(event, context):
         subscriptions_table
     )
 
-    # SNS/SES delivery is not enabled yet.
-    # Return only counts to avoid exposing user emails.
+    
+    # SNS/SES delivery is not enabled in the sandbox.
+    # Log aggregate counts only (no user information).
+    print(
+        f"price_drops={len(price_drops)}, "
+        f"alerts_matched={len(alerts)}, "
+        "delivery=disabled"
+    )
+
     return {
         "price_drops": len(price_drops),
         "alerts_matched": len(alerts),
         "delivery": "disabled"
     }
+

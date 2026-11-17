@@ -1,15 +1,17 @@
+
 # Phase C · ML model & price alerts
 # Owner: Marta
 #
-# TODO (see the plan doc and docs/contracts.md):
-#   [ ] Weekly EventBridge schedule -> retraining state machine: Athena query -> train -> evaluate -> Choice (promote to models/production/ or notify admin-alerts)
-#   [ ] Lambda "check-alerts": event source = core latest_prices_stream_arn, reads subscriptions (station_fuel-index), publishes to price-alerts
-#   [ ] Lambda "send-email": subscribed to price-alerts SNS topic, sends through SES
-#   [ ] SES email identities for the team (demo)
+# Implemented:
+#   - Lambda check-alerts
+#   - DynamoDB Streams trigger
+#   - IAM permissions for subscriptions, streams and logs
 #
-# IAM: one role per Lambda / state machine with only the permissions it needs.
-# If the sandbox does not allow creating roles, use the provided role and
-# document the least-privilege policy you would attach.
+# Pending:
+#   - Scheduled ML retraining
+#   - Email delivery (SNS/SES blocked in university sandbox)
+#
+# IAM: one role per Lambda with least-privilege permissions.
 
 
 # ---------------------------------------------------------
@@ -54,7 +56,10 @@ resource "aws_cloudwatch_log_group" "check_alerts" {
 }
 
 
-# Permissions: read subscriptions and write logs
+# ---------------------------------------------------------
+# IAM permissions for check-alerts Lambda
+# ---------------------------------------------------------
+
 resource "aws_iam_role_policy" "check_alerts" {
   name = "${var.project}-check-alerts-policy"
   role = aws_iam_role.check_alerts.id
@@ -63,18 +68,49 @@ resource "aws_iam_role_policy" "check_alerts" {
     Version = "2012-10-17"
 
     Statement = [
+
+      # 1. Read user subscriptions
       {
         Effect = "Allow"
-        Action = ["dynamodb:Query"]
+
+        Action = [
+          "dynamodb:Query"
+        ]
 
         Resource = [
           local.core.table_arns.subscriptions,
           "${local.core.table_arns.subscriptions}/index/station_fuel-index"
         ]
-
       },
+
+      # 2. Read price changes from DynamoDB Streams
       {
         Effect = "Allow"
+
+        Action = [
+          "dynamodb:DescribeStream",
+          "dynamodb:GetRecords",
+          "dynamodb:GetShardIterator"
+        ]
+
+        Resource = local.core.latest_prices_stream_arn
+      },
+
+      # 3. List DynamoDB Streams
+      {
+        Effect = "Allow"
+
+        Action = [
+          "dynamodb:ListStreams"
+        ]
+
+        Resource = "*"
+      },
+
+      # 4. Write CloudWatch logs
+      {
+        Effect = "Allow"
+
         Action = [
           "logs:CreateLogStream",
           "logs:PutLogEvents"
@@ -84,12 +120,16 @@ resource "aws_iam_role_policy" "check_alerts" {
           "${aws_cloudwatch_log_group.check_alerts.arn}:*"
         ]
       }
+
     ]
   })
 }
 
 
-# AWS Lambda
+# ---------------------------------------------------------
+# AWS Lambda — check-alerts
+# ---------------------------------------------------------
+
 resource "aws_lambda_function" "check_alerts" {
   function_name = "${var.project}-check-alerts"
 
@@ -115,5 +155,31 @@ resource "aws_lambda_function" "check_alerts" {
   ]
 }
 
-# DynamoDB Streams trigger intentionally not enabled.
-# Email delivery is blocked in the university sandbox.
+
+# ---------------------------------------------------------
+# Phase C — DynamoDB Streams trigger
+# ---------------------------------------------------------
+
+resource "aws_lambda_event_source_mapping" "check_alerts_stream" {
+  event_source_arn  = local.core.latest_prices_stream_arn
+  function_name     = aws_lambda_function.check_alerts.arn
+  starting_position = "LATEST"
+
+  batch_size = 10
+  enabled    = true
+
+  depends_on = [
+    aws_iam_role_policy.check_alerts
+  ]
+}
+
+
+# ---------------------------------------------------------
+# Email delivery
+# ---------------------------------------------------------
+
+# SNS and SES are unavailable in the university sandbox.
+# The Lambda detects matching price drops but does not
+# send notifications.
+#
+# Email delivery remains disabled.
