@@ -77,6 +77,60 @@ def load_history(folder):
     ).reset_index(drop=True)
 
 
+def load_history_from_s3(
+    bucket,
+    prefix="raw/",
+    region="us-east-1"
+):
+    """Download S3 snapshots and load historical prices."""
+
+    import boto3
+    import tempfile
+
+    s3 = boto3.client("s3", region_name=region)
+    paginator = s3.get_paginator("list_objects_v2")
+
+    prefix = prefix.rstrip("/") + "/"
+
+    with tempfile.TemporaryDirectory() as tempdir:
+        count = 0
+
+        for page in paginator.paginate(
+            Bucket=bucket,
+            Prefix=prefix
+        ):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+
+                if not key.endswith(".json"):
+                    continue
+
+                relative_path = key[len(prefix):]
+                destination = Path(tempdir) / relative_path
+
+                destination.parent.mkdir(
+                    parents=True,
+                    exist_ok=True
+                )
+
+                s3.download_file(
+                    bucket,
+                    key,
+                    str(destination)
+                )
+
+                count += 1
+
+        if count == 0:
+            raise ValueError(
+                "No historical JSON files found in S3."
+            )
+
+        print(f"Downloaded {count} snapshots from S3")
+
+        return load_history(tempdir)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)

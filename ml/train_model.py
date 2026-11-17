@@ -17,7 +17,7 @@ from sklearn.metrics import (
     f1_score,
 )
 
-from history_loader import load_history
+from history_loader import load_history, load_history_from_s3
 
 
 FEATURES = [
@@ -28,10 +28,17 @@ FEATURES = [
     "price_vs_province",
 ]
 
-
-def train_model(input_folder):
+def train_model(input_folder=None, s3_bucket=None, s3_prefix="raw/"):
     # 1. Load historical data
-    history = load_history(input_folder)
+    if s3_bucket:
+        print("Loading historical data from AWS S3...")
+        history = load_history_from_s3(
+            bucket=s3_bucket,
+            prefix=s3_prefix
+        )
+    else:
+        print("Loading historical data locally...")
+        history = load_history(input_folder)
 
     # 2. Calculate features from current snapshots
     history["weekday"] = history["ts"].dt.weekday
@@ -188,7 +195,17 @@ def train_model(input_folder):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", required=True)
+
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--input")
+    source.add_argument("--s3-bucket")
+
+    parser.add_argument("--s3-prefix", default="raw/")
+
     args = parser.parse_args()
 
-    train_model(args.input)
+    train_model(
+        input_folder=args.input,
+        s3_bucket=args.s3_bucket,
+        s3_prefix=args.s3_prefix
+    )
