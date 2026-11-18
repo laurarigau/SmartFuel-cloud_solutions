@@ -171,3 +171,16 @@ body {
 .subs-list .sub-info { min-width: 0; }
 .subs-list .sub-target { color: var(--muted); font-size: 13px; }
 .subs-list .remove { background: none; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; color: var(--up); min-height: 36px; }
+
+/* Admin panel (only for the Cognito group "admins") */
+.admin-panel { margin-bottom: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.admin-head { display: flex; justify-content: space-between; align-items: center; }
+.admin-head h3 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.admin-status { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 10px 0; font-size: 14px; }
+.admin-status dt { color: var(--muted); }
+.admin-status dd { margin: 0; overflow-wrap: anywhere; }
+.admin-status .ok { color: var(--down); font-weight: 600; }
+.admin-status .bad { color: var(--up); font-weight: 600; }
+.admin-sub { margin: 8px 0 4px; font-size: 13px; color: var(--muted); }
+.admin-quarantine { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.admin-quarantine li { padding: 4px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }

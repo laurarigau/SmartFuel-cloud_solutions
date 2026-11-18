@@ -207,3 +207,72 @@ def test_follow_limit(monkeypatch):
         subs.put_item({"user_id": "user-1", "station_fuel": f"{n}#glp"})
     status, _ = call_private("POST /subscriptions", body={"station_id": "4375", "fuel_type": "glp", "target_price": 1.0})
     assert status == 409
+
+
+# ---------------------------------------------------------------------------
+# Admin routes (group "admins") and browser cache headers
+# ---------------------------------------------------------------------------
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+ADMIN = {**USER, "cognito:groups": "[admins]"}
+
+
+class FakeS3:
+    def __init__(self, keys_by_age_hours):
+        now = datetime.now(timezone.utc)
+        self.objects = [{"Key": k, "Size": 12_000_000, "LastModified": now - timedelta(hours=h)}
+                        for k, h in keys_by_age_hours.items()]
+
+    def list_objects_v2(self, Bucket, Prefix, **_):
+        return {"Contents": [o for o in self.objects if o["Key"].startswith(Prefix)], "IsTruncated": False}
+
+
+def use_s3(monkeypatch, keys):
+    monkeypatch.setenv("LAKE_BUCKET", "smartfuel-lake-test")
+    monkeypatch.setattr(handler, "s3", lambda: FakeS3(keys))
+
+
+def test_admin_routes_need_admin_group(monkeypatch):
+    use_s3(monkeypatch, {})
+    for route in ("GET /admin/status", "GET /admin/quarantine"):
+        assert call_private(route, user=USER)[0] == 403   # logged in, not admin
+        assert call_private(route, user=None)[0] == 401   # not logged in
+        assert call_private(route, user=ADMIN)[0] == 200
+
+
+def test_admin_status(monkeypatch):
+    use_s3(monkeypatch, {
+        "raw/2026/11/18/0700.json": 8,
+        "raw/2026/11/18/1300.json": 2,
+        "clean/2026/11/18/1300.parquet": 2,
+        "quarantine/2026/11/17/1900.json": 20,
+    })
+    status, body = call_private("GET /admin/status", user=ADMIN)
+    assert status == 200
+    assert body["raw"]["files"] == 2
+    assert body["raw"]["latest"]["key"] == "raw/2026/11/18/1300.json"
+    assert body["quarantine"]["files"] == 1
+    assert body["ingestion_ok"] is True and body["processing_ok"] is True
+
+
+def test_admin_status_detects_stopped_ingestion(monkeypatch):
+    use_s3(monkeypatch, {"raw/2026/11/17/0100.json": 30})
+    _, body = call_private("GET /admin/status", user=ADMIN)
+    assert body["ingestion_ok"] is False
+    assert body["processing_ok"] is False
+
+
+def test_admin_quarantine_newest_first(monkeypatch):
+    use_s3(monkeypatch, {"quarantine/a.json": 30, "quarantine/b.json": 1, "raw/x.json": 1})
+    _, body = call_private("GET /admin/quarantine", user=ADMIN)
+    assert [f["key"] for f in body["files"]] == ["quarantine/b.json", "quarantine/a.json"]
+
+
+def test_cache_headers(monkeypatch):
+    use_fakes(monkeypatch, [STATION])
+    public = handler.lambda_handler({"routeKey": "GET /stations", "queryStringParameters": {"geohash": "eyyzh"}}, None)
+    assert public["headers"]["Cache-Control"] == "public, max-age=600"
+    error = handler.lambda_handler({"routeKey": "GET /stations", "queryStringParameters": {}}, None)
+    assert error["headers"]["Cache-Control"] == "no-store"
+    private = handler.lambda_handler({"routeKey": "GET /me", "requestContext": {"authorizer": {"jwt": {"claims": USER}}}}, None)
+    assert private["headers"]["Cache-Control"] == "no-store"

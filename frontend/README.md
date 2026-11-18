@@ -3,6 +3,7 @@
 Static web app: map of Spain with the petrol stations, their current prices and (later) the prediction.
 It only talks to our HTTP API. Public: `GET /stations?geohash=`, `GET /stations/{id}`, `GET /predictions/{id}`.
 With log-in (Cognito): `GET/POST /subscriptions`, `DELETE /subscriptions/{station_fuel}` to follow stations and get price alerts.
+Admins (Cognito group `admins`): `GET /admin/status` and `GET /admin/quarantine` in the "Administración" panel.
 
 ## Run it locally
 
@@ -33,6 +34,15 @@ With log-in (Cognito): `GET/POST /subscriptions`, `DELETE /subscriptions/{statio
 | `config.example.js` | Template for `config.js` (API URL and Cognito) |
 
 Map: [Leaflet](https://leafletjs.com) + OpenStreetMap tiles.
+
+## Make someone an admin
+
+```bash
+aws cognito-idp admin-add-user-to-group --user-pool-id <cognito_user_pool_id> \
+  --username <their email> --group-name admins
+```
+
+They must log out and in again: the group travels inside the log-in token.
 
 ## Publish it (Amplify)
 

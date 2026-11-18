@@ -41,6 +41,16 @@
     <aside class="panel" aria-live="polite">
       <div id="status" class="status">Acerca el mapa a una zona para ver sus gasolineras.</div>
 
+      <section id="admin-panel" class="admin-panel hidden">
+        <div class="admin-head">
+          <h3>Administración</h3>
+          <button id="admin-refresh" type="button" class="link">Actualizar</button>
+        </div>
+        <dl id="admin-status" class="admin-status"></dl>
+        <p class="admin-sub">Ficheros en cuarentena</p>
+        <ul id="admin-quarantine" class="admin-quarantine"></ul>
+      </section>
+
       <section id="my-stations" class="my-stations hidden">
         <h3>Mis gasolineras</h3>
         <ul id="subs-list" class="subs-list"></ul>

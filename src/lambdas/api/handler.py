@@ -8,15 +8,23 @@ Routes:
     GET /subscriptions                   -> stations the user follows            (JWT)
     POST /subscriptions                  -> follow {station_id, fuel_type, target_price} (JWT)
     DELETE /subscriptions/{station_fuel} -> stop following "<station_id>#<fuel_type>"  (JWT)
+    GET /admin/status                    -> pipeline health: latest raw/clean files      (JWT + group admins)
+    GET /admin/quarantine                -> files rejected by validation                 (JWT + group admins)
 
 Private routes are protected by the Cognito JWT authorizer in API Gateway:
 the Lambda only runs with a valid token and reads the user from its claims.
+Admin routes also need the user to be in the Cognito group "admins" (403 otherwise):
+authentication = who you are (token), authorization = what you can do (group).
+
+Public responses carry Cache-Control so browsers reuse them for a few minutes
+(HTTP APIs have no server-side cache); private ones are never cached.
 
 Environment variables (set by Terraform):
     STATIONS_TABLE       smartfuel-stations
     PRICES_TABLE         smartfuel-latest-prices
     PREDICTIONS_TABLE    smartfuel-predictions
     SUBSCRIPTIONS_TABLE  smartfuel-subscriptions
+    LAKE_BUCKET          smartfuel-lake-<suffix> (admin routes only list it)
 """
 import json
 import os
@@ -64,10 +72,12 @@ def _json_default(value):
     raise TypeError(f"Not serializable: {type(value)}")
 
 
-def response(status, body):
+def response(status, body, max_age=0):
+    """JSON response. max_age > 0 lets browsers cache it (public data only)."""
+    cache = f"public, max-age={max_age}" if max_age and status == 200 else "no-store"
     return {
         "statusCode": status,
-        "headers": {"Content-Type": "application/json"},
+        "headers": {"Content-Type": "application/json", "Cache-Control": cache},
         "body": json.dumps(body, default=_json_default, ensure_ascii=False),
     }
 
@@ -86,7 +96,8 @@ def list_stations(params):
             break
         kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
 
-    return response(200, {"geohash": geohash, "count": len(items), "stations": items})
+    # stations barely change: 10 minutes
+    return response(200, {"geohash": geohash, "count": len(items), "stations": items}, max_age=600)
 
 
 def get_station(station_id):
@@ -97,7 +108,7 @@ def get_station(station_id):
 
     price_items = prices.query(KeyConditionExpression=Key("station_id").eq(station_id))["Items"]
     station["prices"] = {p["fuel_type"]: {"price_eur": p.get("price_eur"), "ts": p.get("ts")} for p in price_items}
-    return response(200, station)
+    return response(200, station, max_age=60)  # prices change up to 4 times a day
 
 
 def get_predictions(station_id):
@@ -118,7 +129,7 @@ def get_predictions(station_id):
                 "prob": item.get("prob"),
                 "model_version": item.get("model_version"),
             }
-    return response(200, {"station_id": station_id, "predictions": predictions})
+    return response(200, {"station_id": station_id, "predictions": predictions}, max_age=300)
 
 
 # ---------------------------------------------------------------------------
@@ -144,8 +155,7 @@ def claims(event):
 
 def get_me(event):
     c = claims(event)
-    # API Gateway passes the groups as "[admins]" or "admins"
-    groups = [g for g in str(c.get("cognito:groups", "")).strip("[]").replace(",", " ").split() if g]
+    groups = user_groups(event)
     return response(200, {
         "user_id": c.get("sub"),
         "email": c.get("email"),
@@ -240,6 +250,78 @@ def delete_subscription(event):
     return response(200, {"deleted": station_fuel})
 
 
+# ---------------------------------------------------------------------------
+# Admin routes (JWT + group "admins")
+# ---------------------------------------------------------------------------
+INGEST_EVERY_HOURS = 6  # EventBridge schedule: 01, 07, 13, 19 h
+_s3 = None
+
+
+def s3():
+    """S3 client. Separate function so tests can replace it."""
+    global _s3
+    if _s3 is None:
+        _s3 = boto3.client("s3")
+    return _s3
+
+
+def user_groups(event):
+    # API Gateway passes the groups as "[admins]" or "admins"
+    return [g for g in str(claims(event).get("cognito:groups", "")).strip("[]").replace(",", " ").split() if g]
+
+
+def list_objects(prefix):
+    """All objects under a prefix of the lake (keys sort by date: raw/YYYY/MM/DD/HHmm.json)."""
+    objects, kwargs = [], {"Bucket": os.environ["LAKE_BUCKET"], "Prefix": prefix}
+    while True:
+        page = s3().list_objects_v2(**kwargs)
+        objects.extend(page.get("Contents", []))
+        if not page.get("IsTruncated"):
+            return objects
+        kwargs["ContinuationToken"] = page["NextContinuationToken"]
+
+
+def summary(objects):
+    if not objects:
+        return {"files": 0, "latest": None}
+    latest = max(objects, key=lambda o: o["LastModified"])
+    return {
+        "files": len(objects),
+        "size_mb": round(sum(o["Size"] for o in objects) / 1_000_000, 1),
+        "latest": {"key": latest["Key"], "at": latest["LastModified"].isoformat()},
+    }
+
+
+def admin_status(event):
+    raw, clean, quarantine = list_objects("raw/"), list_objects("clean/"), list_objects("quarantine/")
+    status = {"raw": summary(raw), "clean": summary(clean), "quarantine": {"files": len(quarantine)}}
+
+    # Healthy if the last ingestion is recent (one missed run is tolerated)
+    if raw:
+        last = max(o["LastModified"] for o in raw)
+        hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+        status["hours_since_last_ingestion"] = round(hours, 1)
+        status["ingestion_ok"] = hours <= 2 * INGEST_EVERY_HOURS
+    else:
+        status["ingestion_ok"] = False
+    status["processing_ok"] = bool(clean)
+    return response(200, status)
+
+
+def admin_quarantine(event):
+    files = sorted(list_objects("quarantine/"), key=lambda o: o["LastModified"], reverse=True)[:100]
+    return response(200, {
+        "count": len(files),
+        "files": [{"key": o["Key"], "size_kb": round(o["Size"] / 1000), "at": o["LastModified"].isoformat()}
+                  for o in files],
+    })
+
+
+ADMIN_ROUTES = {
+    "GET /admin/status": admin_status,
+    "GET /admin/quarantine": admin_quarantine,
+}
+
 PRIVATE_ROUTES = {
     "GET /me": get_me,
     "GET /subscriptions": list_subscriptions,
@@ -260,4 +342,10 @@ def lambda_handler(event, context):
         if not claims(event).get("sub"):  # API Gateway already checks it; defence in depth
             return response(401, {"error": "Log in first"})
         return PRIVATE_ROUTES[route](event)
+    if route in ADMIN_ROUTES:
+        if not claims(event).get("sub"):
+            return response(401, {"error": "Log in first"})
+        if "admins" not in user_groups(event):
+            return response(403, {"error": "Only for administrators"})
+        return ADMIN_ROUTES[route](event)
     return response(404, {"error": f"Unknown route {route}"})

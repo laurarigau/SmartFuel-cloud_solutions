@@ -245,7 +245,65 @@ function updateAuthUI() {
   show("follow-form", Boolean(user));
   show("d-follow-login", enabled && !user);
   show("my-stations", Boolean(user));
+  // Only a visual hint: the API itself returns 403 to non-admins
+  show("admin-panel", Boolean(user && user.groups.includes("admins")));
 }
+
+// ---------------------------------------------------------------------------
+// Admin panel (group "admins"): pipeline status and quarantined files
+// ---------------------------------------------------------------------------
+function formatDate(iso) {
+  return iso ? new Date(iso).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : "—";
+}
+
+function renderAdmin(status, quarantine) {
+  const dl = document.getElementById("admin-status");
+  dl.replaceChildren();
+  const row = (label, text, cls = "") => {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = text;
+    if (cls) dd.className = cls;
+    dl.append(dt, dd);
+  };
+  const raw = status.raw || {};
+  const clean = status.clean || {};
+  row("Ingesta", status.ingestion_ok ? "OK" : "Revisar", status.ingestion_ok ? "ok" : "bad");
+  row("Última descarga", raw.latest
+    ? `${formatDate(raw.latest.at)} (hace ${status.hours_since_last_ingestion} h)`
+    : "Ninguna");
+  row("Ficheros raw", raw.files ? `${raw.files} (${raw.size_mb} MB)` : "0");
+  row("Procesamiento", status.processing_ok ? "OK" : "Sin datos procesados", status.processing_ok ? "ok" : "bad");
+  row("Último procesado", clean.latest ? formatDate(clean.latest.at) : "—");
+  row("En cuarentena", String((status.quarantine || {}).files || 0), (status.quarantine || {}).files ? "bad" : "");
+
+  const list = document.getElementById("admin-quarantine");
+  list.replaceChildren();
+  if (quarantine.files.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "Ninguno: todos los ficheros han pasado la validación.";
+    list.append(li);
+  }
+  for (const f of quarantine.files) {
+    const li = document.createElement("li");
+    li.textContent = `${f.key} · ${f.size_kb} KB · ${formatDate(f.at)}`;
+    list.append(li);
+  }
+}
+
+async function loadAdmin() {
+  const user = Auth.user();
+  if (!user || !user.groups.includes("admins")) return;
+  try {
+    const [status, quarantine] = await Promise.all([apiRequest("admin/status"), apiRequest("admin/quarantine")]);
+    renderAdmin(status, quarantine);
+  } catch (err) {
+    setStatus(`Panel de administración: ${err.message}`, true);
+  }
+}
+
+document.getElementById("admin-refresh").addEventListener("click", loadAdmin);
 
 function renderSubscriptions(subs) {
   const list = document.getElementById("subs-list");
@@ -358,6 +416,7 @@ async function start() {
   }
   updateAuthUI();
   loadSubscriptions();
+  loadAdmin();
   refreshStations();
 }
 
