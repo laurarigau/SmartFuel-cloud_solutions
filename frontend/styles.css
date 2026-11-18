@@ -13,6 +13,9 @@
 
 body {
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--ink);
   background: var(--bg);
@@ -50,11 +53,15 @@ body {
   cursor: pointer;
 }
 .controls button:hover { background: var(--brand-dark); }
+.controls button.secondary { background: #fff; color: var(--brand); }
+.controls button.secondary:hover { background: var(--bg); }
+.user-email { color: var(--muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .layout {
   display: flex;
   flex-wrap: wrap;
-  height: calc(100vh - 69px);
+  flex: 1;
+  min-height: 0; /* the header can grow (log-in buttons) without pushing the map off screen */
 }
 
 #map { flex: 999 1 560px; min-height: 420px; }
@@ -105,6 +112,7 @@ body {
 .muted { color: var(--muted); font-size: 14px; margin: 2px 0; }
 
 .prices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.prices > p { grid-column: 1 / -1; }
 .price {
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -129,3 +137,37 @@ body {
 .direction.up { color: var(--up); }
 .direction.down { color: var(--down); }
 .direction.flat { color: var(--muted); }
+
+/* Follow a station (log-in needed) */
+.follow-form { display: grid; gap: 10px; font-size: 14px; }
+.follow-form label { display: grid; gap: 4px; color: var(--muted); }
+.follow-form select, .follow-form input, .follow-form button {
+  font: inherit;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-height: 40px;
+  background: #fff;
+  color: var(--ink);
+}
+.follow-form button { background: var(--brand); border-color: var(--brand); color: #fff; cursor: pointer; }
+.follow-form button:hover { background: var(--brand-dark); }
+.follow-form .ok { color: var(--down); }
+.follow-form .error, .muted.error { color: var(--up); }
+.link { background: none; border: none; padding: 0; font: inherit; color: var(--brand); text-decoration: underline; cursor: pointer; }
+
+.my-stations { margin-bottom: 16px; }
+.my-stations h3 { margin: 0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.subs-list { list-style: none; margin: 0; padding: 0; }
+.subs-list li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.subs-list .sub-info { min-width: 0; }
+.subs-list .sub-target { color: var(--muted); font-size: 13px; }
+.subs-list .remove { background: none; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; color: var(--up); min-height: 36px; }

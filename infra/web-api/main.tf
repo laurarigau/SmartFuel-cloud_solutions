@@ -4,11 +4,12 @@
 # Done:
 #   [x] Lambda "api" (src/lambdas/api): GET /stations?geohash=, GET /stations/{id}
 #   [x] API Gateway HTTP API with throttling, public routes
-# TODO:
-#   [ ] Cognito User Pool + app client + group "admins" (create ONCE: the sandbox cannot delete pools)
-#   [ ] JWT authorizer on private routes: GET/POST/DELETE /subscriptions, /admin/*
 #   [x] GET /predictions/{id}
-#   [ ] Hosting for frontend/ (Amplify, pending sandbox permissions)
+#   [x] Cognito User Pool + hosted login + group "admins" (cognito.tf)
+#   [x] JWT authorizer on private routes: GET /me, GET/POST/DELETE /subscriptions
+# TODO:
+#   [ ] /admin/* routes
+#   [ ] Hosting for frontend/ (Amplify)
 
 locals {
   name = "${var.project}-api"
@@ -56,6 +57,12 @@ data "aws_iam_policy_document" "api" {
   }
 
   statement {
+    sid       = "ManageSubscriptions"
+    actions   = ["dynamodb:Query", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+    resources = [local.core.table_arns.subscriptions]
+  }
+
+  statement {
     sid       = "WriteOwnLogs"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["${aws_cloudwatch_log_group.api.arn}:*"]
@@ -95,9 +102,10 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      STATIONS_TABLE    = local.core.tables.stations
-      PRICES_TABLE      = local.core.tables.latest_prices
-      PREDICTIONS_TABLE = local.core.tables.predictions
+      STATIONS_TABLE      = local.core.tables.stations
+      PRICES_TABLE        = local.core.tables.latest_prices
+      PREDICTIONS_TABLE   = local.core.tables.predictions
+      SUBSCRIPTIONS_TABLE = local.core.tables.subscriptions
     }
   }
 

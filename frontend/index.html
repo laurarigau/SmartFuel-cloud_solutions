@@ -29,6 +29,9 @@
         <option value="36.7213,-4.4214">Málaga</option>
       </select>
       <button id="locate" type="button">Mi ubicación</button>
+      <span id="user-email" class="user-email hidden"></span>
+      <button id="login" type="button" class="secondary hidden">Iniciar sesión</button>
+      <button id="logout" type="button" class="secondary hidden">Salir</button>
     </div>
   </header>
 
@@ -37,6 +40,11 @@
 
     <aside class="panel" aria-live="polite">
       <div id="status" class="status">Acerca el mapa a una zona para ver sus gasolineras.</div>
+
+      <section id="my-stations" class="my-stations hidden">
+        <h3>Mis gasolineras</h3>
+        <ul id="subs-list" class="subs-list"></ul>
+      </section>
 
       <section id="detail" class="detail hidden">
         <button id="close-detail" class="close" type="button" aria-label="Cerrar">×</button>
@@ -50,12 +58,28 @@
 
         <h3>Previsión</h3>
         <div id="d-prediction" class="muted">Disponible cuando el modelo esté en marcha.</div>
+
+        <h3>Avisarme cuando baje</h3>
+        <div id="d-follow-login" class="muted hidden">
+          <button id="follow-login" type="button" class="link">Inicia sesión</button> para recibir un email cuando el precio baje de tu objetivo.
+        </div>
+        <form id="follow-form" class="follow-form hidden">
+          <label>Carburante
+            <select id="f-fuel"></select>
+          </label>
+          <label>Precio objetivo (€/L)
+            <input id="f-target" type="number" step="0.001" min="0.5" max="5" placeholder="1.450" required>
+          </label>
+          <button type="submit">Seguir</button>
+          <p id="f-message" class="muted" role="status"></p>
+        </form>
       </section>
     </aside>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="config.js"></script>
+  <script src="auth.js"></script>
   <script src="geohash.js"></script>
   <script src="app.js"></script>
 </body>

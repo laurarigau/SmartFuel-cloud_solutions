@@ -7,3 +7,17 @@ output "example_request" {
   description = "Open it in the browser to test"
   value       = "${aws_apigatewayv2_stage.default.invoke_url}stations?geohash=sp3e3"
 }
+
+output "cognito_domain" {
+  description = "Hosted login page (COGNITO_DOMAIN in frontend/config.js)"
+  value       = "https://${aws_cognito_user_pool_domain.users.domain}.auth.${var.region}.amazoncognito.com"
+}
+
+output "cognito_client_id" {
+  description = "COGNITO_CLIENT_ID in frontend/config.js"
+  value       = aws_cognito_user_pool_client.web.id
+}
+
+output "cognito_user_pool_id" {
+  value = aws_cognito_user_pool.users.id
+}
