@@ -26,3 +26,9 @@ variable "admin_emails" {
   type        = list(string)
   default     = []
 }
+
+variable "enable_messaging" {
+  description = "Enable SNS and SQS resources when permitted"
+  type        = bool
+  default     = true
+}

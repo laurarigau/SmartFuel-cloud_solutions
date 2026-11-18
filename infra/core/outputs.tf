@@ -30,18 +30,19 @@ output "latest_prices_stream_arn" {
   value = aws_dynamodb_table.latest_prices.stream_arn
 }
 
+
 output "admin_alerts_topic_arn" {
-  value = aws_sns_topic.admin_alerts.arn
+  value = try(aws_sns_topic.admin_alerts[0].arn, null)
 }
 
 output "price_alerts_topic_arn" {
-  value = aws_sns_topic.price_alerts.arn
+  value = try(aws_sns_topic.price_alerts[0].arn, null)
 }
 
 output "dlq_arn" {
-  value = aws_sqs_queue.dlq.arn
+  value = try(aws_sqs_queue.dlq[0].arn, null)
 }
 
 output "dlq_url" {
-  value = aws_sqs_queue.dlq.url
+  value = try(aws_sqs_queue.dlq[0].url, null)
 }

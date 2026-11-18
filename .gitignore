@@ -41,3 +41,6 @@ data/processed/*
 infra/ingestion/package/
 # Frontend: each member points to their own API
 frontend/config.js
+
+# ML model artifacts (stored in AWS S3)
+ml/models/
