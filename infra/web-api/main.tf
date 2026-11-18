@@ -7,8 +7,7 @@
 #   [x] GET /predictions/{id}
 #   [x] Cognito User Pool + hosted login + group "admins" (cognito.tf)
 #   [x] JWT authorizer on private routes: GET /me, GET/POST/DELETE /subscriptions
-# TODO:
-#   [ ] /admin/* routes
+#   [x] Admin routes (group "admins"): GET /admin/status, GET /admin/quarantine
 #   [x] Hosting for frontend/ with Amplify (amplify.tf + scripts/deploy_web.sh)
 
 locals {
@@ -62,6 +61,19 @@ data "aws_iam_policy_document" "api" {
     resources = [local.core.table_arns.subscriptions]
   }
 
+  # Admin routes: only LIST the lake folders (never read or change the files)
+  statement {
+    sid       = "ListLakeForAdmins"
+    actions   = ["s3:ListBucket"]
+    resources = [local.core.lake_bucket_arn]
+
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["raw/*", "clean/*", "quarantine/*"]
+    }
+  }
+
   statement {
     sid       = "WriteOwnLogs"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
@@ -106,6 +118,7 @@ resource "aws_lambda_function" "api" {
       PRICES_TABLE        = local.core.tables.latest_prices
       PREDICTIONS_TABLE   = local.core.tables.predictions
       SUBSCRIPTIONS_TABLE = local.core.tables.subscriptions
+      LAKE_BUCKET         = local.core.lake_bucket
     }
   }
 

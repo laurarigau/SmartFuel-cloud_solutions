@@ -99,13 +99,16 @@ resource "aws_apigatewayv2_authorizer" "cognito" {
   }
 }
 
-# Private routes (need a valid token)
+# Private routes (need a valid token). The /admin routes also need the group
+# "admins": the Lambda checks the "cognito:groups" claim and returns 403 otherwise.
 locals {
   private_routes = {
     me                  = "GET /me"
     list_subscriptions  = "GET /subscriptions"
     create_subscription = "POST /subscriptions"
     delete_subscription = "DELETE /subscriptions/{station_fuel}"
+    admin_status        = "GET /admin/status"
+    admin_quarantine    = "GET /admin/quarantine"
   }
 }
 

@@ -68,7 +68,7 @@ Until C delivers v0, B uses a stub that returns `{"direction": "flat", "prob": 1
 | `GET /stations/{id}` | public | station, prices, prediction |
 | `GET /predictions/{id}` | public | predictions for the station |
 | `GET /subscriptions` · `POST /subscriptions` · `DELETE /subscriptions/{station_fuel}` | JWT | the user's followed stations |
-| `/admin/*` | JWT + group `admins` | pipeline status, quarantine list |
+| `GET /admin/status` · `GET /admin/quarantine` | JWT + group `admins` (else 403) | pipeline status, quarantine list |
 
 ## Naming & tags
 
