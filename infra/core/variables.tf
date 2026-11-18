@@ -1,7 +1,7 @@
 variable "region" {
-  description = "AWS region (the shared account only allows eu-north-1)"
+  description = "AWS region of the sandbox"
   type        = string
-  default     = "eu-north-1"
+  default     = "us-east-1"
 }
 
 variable "project" {

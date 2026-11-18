@@ -1,7 +1,6 @@
 
 """Load SmartFuel historical fuel-price snapshots."""
 
-import os
 import json
 import argparse
 from pathlib import Path
@@ -81,7 +80,7 @@ def load_history(folder):
 def load_history_from_s3(
     bucket,
     prefix="raw/",
-    region=os.environ.get("AWS_DEFAULT_REGION", "eu-north-1")
+    region="us-east-1"
 ):
     """Download S3 snapshots and load historical prices."""
 
