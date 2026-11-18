@@ -1,0 +1,19 @@
+
+FROM public.ecr.aws/lambda/python:3.11
+
+# Install precompiled ML dependencies
+RUN pip install --no-cache-dir --only-binary=:all: \
+    numpy==1.26.4 \
+    scipy==1.14.1 \
+    pandas==2.2.3 \
+    scikit-learn==1.6.1 \
+    joblib==1.4.2 \
+    boto3
+
+# Copy Phase C training code
+COPY ml/history_loader.py ml/train_model.py ${LAMBDA_TASK_ROOT}/
+COPY src/lambdas/train/handler.py ${LAMBDA_TASK_ROOT}/handler.py
+
+ENV MODEL_OUTPUT_DIR=/tmp/smartfuel-model
+
+CMD ["handler.lambda_handler"]

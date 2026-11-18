@@ -9,6 +9,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+import os
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
@@ -156,10 +157,17 @@ def train_model(input_folder=None, s3_bucket=None, s3_prefix="raw/", upload_s3_b
     }
 
     # 7. Export as candidate, not production
-    output_dir = (
-        Path(__file__).resolve().parent /
-        "models/candidates/v0-script"
+
+    output_dir = Path(
+        os.environ.get(
+            "MODEL_OUTPUT_DIR",
+            str(
+                Path(__file__).resolve().parent
+                / "models/candidates/v0-script"
+            )
+        )
     )
+
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -218,6 +226,14 @@ def train_model(input_folder=None, s3_bucket=None, s3_prefix="raw/", upload_s3_b
             "Candidate uploaded to:",
             f"s3://{upload_s3_bucket}/{prefix}"
         )
+
+
+    # Return information for the evaluate Lambda
+    return {
+        "candidate_prefix": prefix if upload_s3_bucket else None,
+        "metrics": metrics,
+        "status": "candidate"
+    }
 
 
 
