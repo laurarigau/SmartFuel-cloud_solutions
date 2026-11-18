@@ -1,6 +1,6 @@
 variable "region" {
   type    = string
-  default = "us-east-1"
+  default = "eu-north-1"
 }
 
 variable "project" {
@@ -16,7 +16,7 @@ variable "state_bucket" {
 variable "ingest_region" {
   description = "Region where the ingest Lambda runs (must reach the Ministry API)"
   type        = string
-  default     = "us-east-1"
+  default     = "eu-north-1"
 }
 
 variable "ingest_schedule" {
