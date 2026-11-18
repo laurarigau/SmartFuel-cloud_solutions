@@ -101,3 +101,109 @@ def test_predictions_empty_when_none(monkeypatch):
     status, body = call("GET /predictions/{id}", path={"id": "999"})
     assert status == 200
     assert body == {"station_id": "999", "predictions": {}}
+
+
+# ---------------------------------------------------------------------------
+# Private routes: /me and /subscriptions (the JWT is checked by API Gateway)
+# ---------------------------------------------------------------------------
+USER = {"sub": "user-1", "email": "ana@example.com"}
+
+
+class FakeSubscriptions:
+    def __init__(self):
+        self.items = {}  # (user_id, station_fuel) -> item
+
+    def query(self, KeyConditionExpression):
+        user_id = KeyConditionExpression.get_expression()["values"][1]
+        return {"Items": [dict(i) for (u, _), i in self.items.items() if u == user_id]}
+
+    def put_item(self, Item):
+        self.items[(Item["user_id"], Item["station_fuel"])] = dict(Item)
+
+    def delete_item(self, Key):
+        self.items.pop((Key["user_id"], Key["station_fuel"]), None)
+
+
+def use_subscriptions(monkeypatch):
+    subs = FakeSubscriptions()
+    use_fakes(monkeypatch, [STATION])
+    monkeypatch.setattr(handler, "subscriptions_table", lambda: subs)
+    return subs
+
+
+def call_private(route, user=USER, body=None, path=None):
+    event = {"routeKey": route, "pathParameters": path,
+             "body": json.dumps(body) if body is not None else None,
+             "requestContext": {"authorizer": {"jwt": {"claims": user}}} if user else {}}
+    res = handler.lambda_handler(event, None)
+    return res["statusCode"], json.loads(res["body"])
+
+
+def test_me_returns_user_and_admin_flag():
+    status, body = call_private("GET /me", user={**USER, "cognito:groups": "[admins]"})
+    assert status == 200
+    assert body == {"user_id": "user-1", "email": "ana@example.com", "groups": ["admins"], "is_admin": True}
+
+
+def test_private_route_without_token_is_rejected():
+    status, _ = call_private("GET /subscriptions", user=None)
+    assert status == 401
+
+
+def test_follow_list_and_unfollow(monkeypatch):
+    subs = use_subscriptions(monkeypatch)
+
+    status, body = call_private("POST /subscriptions",
+                                body={"station_id": "4375", "fuel_type": "gasoleo_a", "target_price": 1.45})
+    assert status == 201
+    assert body["station_fuel"] == "4375#gasoleo_a"
+    assert body["station_name"] == "Nº 10.935"
+    stored = subs.items[("user-1", "4375#gasoleo_a")]
+    assert stored["email"] == "ana@example.com"      # phase C needs it for the alert
+    assert stored["target_price"] == Decimal("1.450")  # Decimal, as DynamoDB requires
+
+    status, body = call_private("GET /subscriptions")
+    assert status == 200 and body["count"] == 1
+    assert "email" not in body["subscriptions"][0]
+
+    status, _ = call_private("DELETE /subscriptions/{station_fuel}", path={"station_fuel": "4375%23gasoleo_a"})
+    assert status == 200
+    assert subs.items == {}
+
+
+def test_follow_again_updates_target(monkeypatch):
+    subs = use_subscriptions(monkeypatch)
+    for price in (1.50, 1.40):
+        call_private("POST /subscriptions", body={"station_id": "4375", "fuel_type": "gasoleo_a", "target_price": price})
+    assert len(subs.items) == 1
+    assert subs.items[("user-1", "4375#gasoleo_a")]["target_price"] == Decimal("1.400")
+
+
+def test_follow_validates_input(monkeypatch):
+    use_subscriptions(monkeypatch)
+    bad_bodies = [
+        {"station_id": "abc", "fuel_type": "gasoleo_a", "target_price": 1.4},
+        {"station_id": "4375", "fuel_type": "diesel", "target_price": 1.4},
+        {"station_id": "4375", "fuel_type": "gasoleo_a", "target_price": "cheap"},
+        {"station_id": "4375", "fuel_type": "gasoleo_a", "target_price": 99},
+    ]
+    for body in bad_bodies:
+        status, _ = call_private("POST /subscriptions", body=body)
+        assert status == 400, body
+    status, _ = call_private("POST /subscriptions", body={"station_id": "999999", "fuel_type": "glp", "target_price": 1})
+    assert status == 404
+
+
+def test_users_only_see_their_own_subscriptions(monkeypatch):
+    use_subscriptions(monkeypatch)
+    call_private("POST /subscriptions", body={"station_id": "4375", "fuel_type": "glp", "target_price": 1.0})
+    status, body = call_private("GET /subscriptions", user={"sub": "user-2", "email": "otro@example.com"})
+    assert status == 200 and body["count"] == 0
+
+
+def test_follow_limit(monkeypatch):
+    subs = use_subscriptions(monkeypatch)
+    for n in range(handler.MAX_SUBSCRIPTIONS):
+        subs.put_item({"user_id": "user-1", "station_fuel": f"{n}#glp"})
+    status, _ = call_private("POST /subscriptions", body={"station_id": "4375", "fuel_type": "glp", "target_price": 1.0})
+    assert status == 409

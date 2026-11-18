@@ -1,5 +1,6 @@
 // SmartFuel Forecast · map of stations (Phase D)
-// Reads stations from our API: GET /stations?geohash=xxxxx and GET /stations/{id}
+// Public:  GET /stations?geohash=xxxxx, GET /stations/{id}, GET /predictions/{id}
+// Log-in:  GET/POST /subscriptions, DELETE /subscriptions/{station_fuel} (Cognito token, see auth.js)
 
 const API_URL = (window.SMARTFUEL_CONFIG || {}).API_URL;
 const MIN_ZOOM_FOR_STATIONS = 12; // below this, too many cells to load
@@ -38,6 +39,25 @@ async function fetchJson(path) {
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
   return body;
+}
+
+// Private calls: send the Cognito token (API Gateway checks it)
+async function apiRequest(path, { method = "GET", body } = {}) {
+  const token = await Auth.getToken();
+  if (!token) throw new Error("Tu sesión ha caducado: vuelve a iniciar sesión.");
+  const res = await fetch(API_URL + path, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    Auth.clear();
+    updateAuthUI();
+    throw new Error("Tu sesión ha caducado: vuelve a iniciar sesión.");
+  }
+  if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
+  return data;
 }
 
 async function loadCell(cell) {
@@ -162,6 +182,8 @@ function renderPredictions(predictions) {
 }
 
 async function showDetail(stationId) {
+  currentStation = { id: stationId, prices: {} };
+  setFollowMessage("");
   detailEl.classList.remove("hidden");
   document.getElementById("d-name").textContent = "Cargando…";
   document.getElementById("d-prediction").textContent = "Cargando…";
@@ -172,6 +194,8 @@ async function showDetail(stationId) {
     document.getElementById("d-address").textContent = [s.address, s.postal_code, s.province].filter(Boolean).join(", ");
     document.getElementById("d-hours").textContent = s.opening_hours ? `Horario: ${s.opening_hours}` : "";
     renderPrices(s.prices);
+    currentStation.prices = s.prices || {};
+    prefillTarget();
   } catch (err) {
     document.getElementById("d-name").textContent = "No se ha podido cargar la estación";
     document.getElementById("d-address").textContent = err.message;
@@ -184,6 +208,125 @@ async function showDetail(stationId) {
     document.getElementById("d-prediction").textContent = "No se ha podido cargar la previsión.";
   }
 }
+
+// ---------------------------------------------------------------------------
+// Log-in and "follow this station"
+// ---------------------------------------------------------------------------
+let currentStation = null; // { id, prices } of the station open in the panel
+const fuelSelect = document.getElementById("f-fuel");
+for (const [value, label] of Object.entries(FUEL_LABELS)) {
+  fuelSelect.append(new Option(label, value));
+}
+
+function setFollowMessage(text, cls = "") {
+  const el = document.getElementById("f-message");
+  el.textContent = text;
+  el.className = `muted ${cls}`;
+}
+
+// Suggest a target 2 cents below the current price of the chosen fuel
+function prefillTarget() {
+  const price = currentStation && currentStation.prices[fuelSelect.value];
+  const input = document.getElementById("f-target");
+  input.value = price && price.price_eur != null ? (Number(price.price_eur) - 0.02).toFixed(3) : "";
+}
+fuelSelect.addEventListener("change", prefillTarget);
+
+function updateAuthUI() {
+  const show = (id, visible) => document.getElementById(id).classList.toggle("hidden", !visible);
+  const enabled = Auth.enabled();
+  const user = enabled ? Auth.user() : null;
+
+  show("login", enabled && !user);
+  show("logout", Boolean(user));
+  show("user-email", Boolean(user));
+  document.getElementById("user-email").textContent = user ? user.email : "";
+
+  show("follow-form", Boolean(user));
+  show("d-follow-login", enabled && !user);
+  show("my-stations", Boolean(user));
+}
+
+function renderSubscriptions(subs) {
+  const list = document.getElementById("subs-list");
+  list.replaceChildren();
+  if (subs.length === 0) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.textContent = "Todavía no sigues ninguna gasolinera. Abre una en el mapa y pulsa «Seguir».";
+    list.append(li);
+    return;
+  }
+  for (const sub of subs) {
+    const li = document.createElement("li");
+    const info = document.createElement("div");
+    info.className = "sub-info";
+    const name = document.createElement("button");
+    name.type = "button";
+    name.className = "link";
+    name.textContent = sub.municipality ? `${sub.station_name} · ${sub.municipality}` : sub.station_name || sub.station_id;
+    name.addEventListener("click", () => showDetail(sub.station_id));
+    const target = document.createElement("div");
+    target.className = "sub-target";
+    target.textContent = `${FUEL_LABELS[sub.fuel_type] || sub.fuel_type}: aviso por debajo de ${Number(sub.target_price).toFixed(3)} €/L`;
+    info.append(name, target);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove";
+    remove.textContent = "Quitar";
+    remove.addEventListener("click", async () => {
+      remove.disabled = true;
+      try {
+        await apiRequest(`subscriptions/${encodeURIComponent(sub.station_fuel)}`, { method: "DELETE" });
+        await loadSubscriptions();
+      } catch (err) {
+        remove.disabled = false;
+        setStatus(`No se ha podido quitar: ${err.message}`, true);
+      }
+    });
+    li.append(info, remove);
+    list.append(li);
+  }
+}
+
+async function loadSubscriptions() {
+  if (!Auth.user()) return;
+  try {
+    const data = await apiRequest("subscriptions");
+    renderSubscriptions(data.subscriptions);
+  } catch (err) {
+    setStatus(`No se han podido cargar tus gasolineras: ${err.message}`, true);
+  }
+}
+
+document.getElementById("follow-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!currentStation) return;
+  const button = e.target.querySelector("button[type=submit]");
+  button.disabled = true;
+  setFollowMessage("Guardando…");
+  try {
+    const sub = await apiRequest("subscriptions", {
+      method: "POST",
+      body: {
+        station_id: currentStation.id,
+        fuel_type: fuelSelect.value,
+        target_price: Number(document.getElementById("f-target").value),
+      },
+    });
+    setFollowMessage(`Hecho: te avisaremos cuando ${FUEL_LABELS[sub.fuel_type]} baje de ${Number(sub.target_price).toFixed(3)} €/L.`, "ok");
+    await loadSubscriptions();
+  } catch (err) {
+    setFollowMessage(err.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.getElementById("login").addEventListener("click", () => Auth.login());
+document.getElementById("follow-login").addEventListener("click", () => Auth.login());
+document.getElementById("logout").addEventListener("click", () => Auth.logout());
 
 document.getElementById("close-detail").addEventListener("click", () => detailEl.classList.add("hidden"));
 
@@ -207,4 +350,15 @@ map.on("moveend", () => {
   timer = setTimeout(refreshStations, 300); // wait until the user stops moving
 });
 
-refreshStations();
+async function start() {
+  try {
+    await Auth.handleRedirect(); // finishes the log-in when Cognito sends us back
+  } catch (err) {
+    setStatus(`No se ha podido iniciar sesión: ${err.message}`, true);
+  }
+  updateAuthUI();
+  loadSubscriptions();
+  refreshStations();
+}
+
+start();
