@@ -7,8 +7,8 @@ data "terraform_remote_state" "core" {
 
   config = {
     bucket = var.state_bucket
-    key    = "${var.region}/core/terraform.tfstate"
-    region = "eu-north-1"
+    key    = "core/terraform.tfstate"
+    region = var.region
   }
 }
 
