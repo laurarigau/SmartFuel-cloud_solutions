@@ -5,9 +5,7 @@
 
 set -euo pipefail
 
-# Default: eu-north-1 (Stockholm), the only region allowed in the shared account.
-# For the ESADE sandbox: export AWS_DEFAULT_REGION=us-east-1 before running it.
-REGION="${AWS_DEFAULT_REGION:-eu-north-1}"
+REGION="${AWS_DEFAULT_REGION:-us-east-1}"
 ALL_STACKS=(core ingestion processing ml-alerts web-api)
 MODE="apply"
 
@@ -82,7 +80,6 @@ if ! aws s3api head-bucket --bucket "${STATE_BUCKET}" 2>/dev/null; then
 fi
 
 export TF_VAR_region="${REGION}"
-export TF_VAR_ingest_region="${TF_VAR_ingest_region:-${REGION}}" # ingest Lambda in the same region unless set
 export TF_VAR_suffix="${SUFFIX}"
 export TF_VAR_state_bucket="${STATE_BUCKET}"
 

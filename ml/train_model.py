@@ -206,7 +206,7 @@ def train_model(input_folder=None, s3_bucket=None, s3_prefix="raw/", upload_s3_b
         import boto3
         from uuid import uuid4
 
-        s3 = boto3.client("s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "eu-north-1"))
+        s3 = boto3.client("s3", region_name="us-east-1")
 
         run_id = (
             datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

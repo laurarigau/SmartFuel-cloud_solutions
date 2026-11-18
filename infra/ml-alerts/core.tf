@@ -1,5 +1,6 @@
 # Read the shared Core infrastructure outputs.
-# Same backend as scripts/deploy.sh: state bucket and resources in var.region.
+# AWS resources are deployed in us-east-1.
+# Terraform state is stored in eu-north-1.
 
 data "terraform_remote_state" "core" {
   backend = "s3"

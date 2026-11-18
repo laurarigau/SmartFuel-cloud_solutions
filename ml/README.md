@@ -2,7 +2,7 @@
 
 **Owner:** Marta Palet  
 **Project:** SmartFuel Forecast  
-**AWS Region:** `eu-north-1`  
+**AWS Region:** `us-east-1`  
 **Status:** Implemented and tested in the Phase C AWS Sandbox
 
 ## 1. Overview
@@ -315,7 +315,7 @@ Example:
 
 ```bash
 export AWS_PROFILE=smartfuel-sandbox
-export TF_VAR_region=eu-north-1
+export TF_VAR_region=us-east-1
 export TF_VAR_state_bucket=smartfuel-tfstate-182018074319
 export TF_VAR_retraining_lake_bucket=smartfuel-lake-182018074319-use1
 export TF_VAR_enable_ml_retraining=true
@@ -329,7 +329,7 @@ terraform -chdir=infra/ml-alerts apply
 
 Always review `terraform plan` before applying changes.
 
-The Terraform state bucket and the application resources are both in `eu-north-1` (the only region allowed in the shared account).
+The Terraform state bucket is located in `eu-north-1`, while the application resources are deployed in `us-east-1`.
 
 Do not change the backend configuration or state keys without coordinating with the team.
 
