@@ -3,18 +3,19 @@
 Phase D uses it to have real data for the API before phase B writes it.
 Phase B must compute geohash5 the same way (same function, precision 5).
 
-Usage (with your sandbox credentials loaded):
+Usage (with your AWS credentials loaded; region = $AWS_DEFAULT_REGION, default eu-north-1):
     python3 scripts/seed_stations.py                          # fixtures/fuel_prices_sample.json
     python3 scripts/seed_stations.py fixtures/raw_sample.json # another file
     python3 scripts/seed_stations.py --dry-run                # only print, no AWS
 """
 import json
+import os
 import sys
 from decimal import Decimal
 from pathlib import Path
 
 TABLE = "smartfuel-stations"
-REGION = "us-east-1"
+REGION = os.environ.get("AWS_DEFAULT_REGION", "eu-north-1")  # same default as deploy.sh
 DEFAULT_FILE = Path(__file__).resolve().parent.parent / "fixtures" / "fuel_prices_sample.json"
 
 _BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz"
