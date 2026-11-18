@@ -34,7 +34,7 @@ locals {
     }
     clean = {
       timeout = 300
-      memory  = 1024
+      memory  = 512
       pandas  = true
       env = {
         LAKE_BUCKET   = local.core.lake_bucket
@@ -53,7 +53,7 @@ locals {
     }
     predict = {
       timeout = 300
-      memory  = 1024
+      memory  = 512
       pandas  = true
       env = {
         LAKE_BUCKET       = local.core.lake_bucket
