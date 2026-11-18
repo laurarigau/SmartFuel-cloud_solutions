@@ -34,6 +34,13 @@ With log-in (Cognito): `GET/POST /subscriptions`, `DELETE /subscriptions/{statio
 
 Map: [Leaflet](https://leafletjs.com) + OpenStreetMap tiles.
 
-## Pending
+## Publish it (Amplify)
 
-- Public hosting with Amplify (then add its URL to `web_urls` so the log-in works there too)
+```bash
+./scripts/deploy.sh web-api      # creates the Amplify app (once)
+./scripts/deploy_web.sh          # uploads frontend/ and prints the public URL
+```
+
+`deploy_web.sh` generates the `config.js` of the published site from the `web-api` outputs,
+so nothing secret or personal is committed. The Amplify URL is already registered in Cognito,
+so the log-in works there too. Run `deploy_web.sh` again after every change to `frontend/`.

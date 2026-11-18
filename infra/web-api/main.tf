@@ -9,7 +9,7 @@
 #   [x] JWT authorizer on private routes: GET /me, GET/POST/DELETE /subscriptions
 # TODO:
 #   [ ] /admin/* routes
-#   [ ] Hosting for frontend/ (Amplify)
+#   [x] Hosting for frontend/ with Amplify (amplify.tf + scripts/deploy_web.sh)
 
 locals {
   name = "${var.project}-api"

@@ -56,8 +56,8 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_scopes                 = ["openid", "email", "profile"]
   supported_identity_providers         = ["COGNITO"]
-  callback_urls                        = var.web_urls
-  logout_urls                          = var.web_urls
+  callback_urls                        = concat(var.web_urls, [local.amplify_url])
+  logout_urls                          = concat(var.web_urls, [local.amplify_url])
 
   explicit_auth_flows = [
     "ALLOW_USER_SRP_AUTH",
