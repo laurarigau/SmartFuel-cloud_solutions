@@ -19,7 +19,7 @@ variable "suffix" {
 }
 
 variable "web_urls" {
-  description = "Where the web app runs: Cognito sends the user back here after log-in / log-out"
+  description = "Extra places where the web app runs (the Amplify URL is added automatically): Cognito sends the user back here after log-in / log-out"
   type        = list(string)
   default     = ["http://localhost:8000/"]
 }

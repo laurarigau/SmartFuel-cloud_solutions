@@ -21,3 +21,12 @@ output "cognito_client_id" {
 output "cognito_user_pool_id" {
   value = aws_cognito_user_pool.users.id
 }
+
+output "web_url" {
+  description = "Public URL of the web app (after scripts/deploy_web.sh)"
+  value       = local.amplify_url
+}
+
+output "amplify_app_id" {
+  value = aws_amplify_app.web.id
+}
