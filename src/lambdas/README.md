@@ -25,6 +25,7 @@ The pipeline runs `pytest src/lambdas` on every PR.
 
 | Lambda | Input → output | Env vars | Layer |
 | --- | --- | --- | --- |
+| `process` (orchestrator) | EventBridge S3 event on `raw/` → runs the 4 below: validate → clean → save-changes ‖ predict, 3 attempts per step, alert + DLQ on failure. Replaces Step Functions (not available in the sandbox) | `FN_*`, `ADMIN_TOPIC_ARN`, `MAX_ATTEMPTS` | — |
 | `validate` | EventBridge S3 event → `{bucket, key, valid, reasons, snapshot, stations, quarantine_key}` | `LAKE_BUCKET`, `ADMIN_TOPIC_ARN`, `MIN_STATIONS` | — |
 | `clean` | validate output → `+ {clean_key, changes_key, previous_key, rows, changes, new_stations}` | `LAKE_BUCKET`, `LOOKBACK_DAYS` | AWS SDK for pandas |
 | `save-changes` | clean output → `{prices_written, stations_written}` | `LAKE_BUCKET`, `LATEST_PRICES_TABLE`, `STATIONS_TABLE` | — |
