@@ -1,7 +1,7 @@
 # Contracts between phases
 
 Names and formats every phase relies on. Change them only in a PR that tags the
-people affected. `<suffix>` = your AWS account id (set by `scripts/deploy.sh`). Region: `us-east-1`.
+people affected. `<suffix>` = your AWS account id (set by `scripts/deploy.sh`). Region: `eu-north-1` (Stockholm), the only region allowed in the shared account (`AWS_DEFAULT_REGION` overrides it).
 
 ## S3 data lake — `smartfuel-lake-<suffix>` (core)
 
