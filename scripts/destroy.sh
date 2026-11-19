@@ -12,7 +12,7 @@ export TF_VAR_region="${REGION}" TF_VAR_suffix="${ACCOUNT_ID}" TF_VAR_state_buck
 read -r -p "Destroy SmartFuel in account ${ACCOUNT_ID}? Type 'yes': " ok
 [[ "$ok" == "yes" ]] || exit 1
 
-for stack in web-api ml-alerts processing ingestion core; do
+for stack in monitoring web-api ml-alerts processing ingestion core; do
   echo "=== ${stack} ==="
   cd "${ROOT}/infra/${stack}"
   terraform init -input=false -reconfigure \

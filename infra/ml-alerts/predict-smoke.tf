@@ -22,8 +22,8 @@ resource "aws_iam_role_policy" "predict_smoke" {
       Effect = "Allow"
       Action = ["s3:GetObject"]
       Resource = [
-        "arn:aws:s3:::${var.retraining_lake_bucket}/clean/*",
-        "arn:aws:s3:::${var.retraining_lake_bucket}/models/candidates/*"
+        "arn:aws:s3:::${local.lake_bucket}/clean/*",
+        "arn:aws:s3:::${local.lake_bucket}/models/candidates/*"
       ]
     }]
   })

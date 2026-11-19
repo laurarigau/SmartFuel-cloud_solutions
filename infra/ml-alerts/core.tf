@@ -13,4 +13,7 @@ data "terraform_remote_state" "core" {
 
 locals {
   core = data.terraform_remote_state.core.outputs
+
+  # Lake bucket of the ML resources: the one of core unless set explicitly
+  lake_bucket = var.retraining_lake_bucket != "" ? var.retraining_lake_bucket : local.core.lake_bucket
 }

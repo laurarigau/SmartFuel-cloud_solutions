@@ -1,8 +1,8 @@
 
 variable "enable_predict_runtime" {
-  description = "Deploy the ML prediction Lambda without switching Phase B to use it"
+  description = "Deploy the ML prediction Lambda (Phase B uses it through use_ml_predict in processing)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 resource "aws_iam_role" "predict_runtime" {
@@ -31,8 +31,8 @@ resource "aws_iam_role_policy" "predict_runtime" {
         Effect = "Allow"
         Action = ["s3:GetObject"]
         Resource = [
-          "arn:aws:s3:::${var.retraining_lake_bucket}/clean/*",
-          "arn:aws:s3:::${var.retraining_lake_bucket}/models/production/*"
+          "arn:aws:s3:::${local.lake_bucket}/clean/*",
+          "arn:aws:s3:::${local.lake_bucket}/models/production/*"
         ]
       },
       {
@@ -70,7 +70,7 @@ resource "aws_lambda_function" "predict_runtime" {
 
   environment {
     variables = {
-      LAKE_BUCKET       = var.retraining_lake_bucket
+      LAKE_BUCKET       = local.lake_bucket
       PREDICTIONS_TABLE = local.core.tables.predictions
       MODEL_PREFIX      = "models/production/"
       TTL_DAYS          = "7"

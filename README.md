@@ -13,6 +13,7 @@ Cloud Solutions project — Carla Escassi, Marc Farràs, Laura Rigau, Marta Pale
 - **Forecast** for each station and fuel: the price will go up, go down or stay the same (ML model compared with a baseline).
 - **Price alerts:** log in, follow a station with a target price and get an email when it drops.
 - **Admin panel** (Cognito group `admins`): pipeline health and quarantined files.
+- **Monitoring:** CloudWatch alarms email the team when something fails, and a dashboard shows the whole pipeline.
 - Web in **Spanish and English**.
 
 ## Architecture
@@ -32,6 +33,9 @@ Browser ──► Amplify (static web, ES/EN) ──► API Gateway HTTP API (+ 
 
 Weekly: EventBridge Scheduler ──► Step Functions smartfuel-ml-retraining: Train (Athena over clean/) → Evaluate
           candidate in models/candidates/<date>/ with evaluation.json (vs baseline and current model) → manual promotion to models/production/
+
+Monitoring: CloudWatch logs + alarms (Lambda errors, failed workflows, stopped ingestion, DLQ, API 5xx) ──► SNS smartfuel-alarms ──► team email
+            CloudWatch dashboard "smartfuel" with the health of the whole pipeline
 ```
 
 Everything is serverless (no EC2, RDS, NAT or VPC), defined in Terraform, with one least-privilege IAM role per Lambda / workflow.
@@ -80,9 +84,9 @@ git pull
 python scripts/seed_stations.py <file> # load stations into DynamoDB from a Ministry JSON
 ```
 
-Order: `core` → `ingestion` → `processing` → `ml-alerts` → `web-api`. The first run creates the state bucket `smartfuel-tfstate-<account-id>`.
+Order: `core` → `ingestion` → `processing` → `ml-alerts` → `web-api` → `monitoring`. The first run creates the state bucket `smartfuel-tfstate-<account-id>`.
 
-> ⚠️ **Phase C switches.** In `ml-alerts`, the real-model predict, the email delivery and the weekly retraining are behind variables that default to `false` (`enable_predict_runtime`, `enable_alert_publish`, `enable_alert_delivery`, `enable_ml_retraining`, `enable_weekly_scheduler`, plus `alert_sender_email`), and `processing` only uses the real model when `predict_lambda_arn` is set. They are **on** in the shared account. Running `deploy.sh ml-alerts` or `deploy.sh processing` without those values would switch them off again: ask Marta for them (see `ml/README.md`) and always run `--plan` first — it must not show anything to destroy.
+> **Phase C switches.** The real-model predict, the email delivery and the weekly retraining (`enable_*` variables in `ml-alerts`, `use_ml_predict` in `processing`) are **on by default**, exactly as deployed. A plain `deploy.sh` keeps them running; set a variable to `false` only to switch that part off. Always run `--plan` first: it must not show anything to destroy.
 
 Shared resources (`core`) are used by everyone: announce in the group before deploying it, and never run `deploy.sh` without a stack name unless you mean to update everything.
 
@@ -106,6 +110,7 @@ infra/
   ml-alerts/     # Phase C · Streams -> check-alerts -> SNS -> send-email (SES); predict with the real model
                  #           (container image in ECR); weekly retraining (Step Functions + Athena/Glue)
   web-api/       # Phase D · HTTP API + Lambda, Cognito, admin routes, Amplify
+  monitoring/    # shared · CloudWatch alarms emailed to the team (own SNS topic + KMS key) and dashboard
 scripts/         # deploy, publish, seed, test and backfill scripts (+ exploration/: first API tests)
 src/lambdas/     # one folder per Lambda: handler.py + test_handler.py
 frontend/        # static web app: map, cheapest stations in the area, log-in, follow stations, admin panel, ES/EN
@@ -126,18 +131,16 @@ The whole pipeline runs on its own in the shared account: ingestion 4 times a da
 | B · Processing | Carla | Step Functions with retries, catch, SNS and DLQ; Parquet in `clean/`; prices in DynamoDB; history backfilled; predict uses the Phase C model | — |
 | C · Model & alerts | Marta | Model vs baseline in `models/production/`, used by predict; price alerts check-alerts → SNS → send-email → SES; weekly retraining with Step Functions + Athena (Glue table) | Automatic model promotion, SES production access (see *Limitations*) |
 | D · Web, API & auth | Marc | Map, prices, prediction, cheapest stations in the area, Cognito log-in, subscriptions, admin routes, browser caching, Spanish/English, Amplify | — |
-| Shared | — | IAM least privilege, encryption at rest and in transit, CloudWatch logs, admin emails subscribed to SNS | CloudWatch alarms, budget alert (see *Limitations*) |
+| Shared | — | IAM least privilege, encryption at rest and in transit, CloudWatch logs, alarms (Lambda errors, failed workflows, stopped ingestion, DLQ, API 5xx) and dashboard, admin emails subscribed to SNS | Budget alert (see *Limitations*) |
 
 ## Limitations and next steps
 
 | Limitation | Why | Next step |
 |---|---|---|
-| No CloudWatch alarms yet | We prioritised the data pipeline. Logs and metrics are in place, and the admin panel shows the pipeline health | Alarms on Lambda errors, failed Step Functions runs and a stopped ingestion, emailed to admins via SNS |
 | No budget alert | The AWS Free plan cannot charge us: when the credits run out, AWS closes the account | AWS Budgets alert in Terraform for a paid account |
 | Model promotion is manual | Every week a candidate model is trained and evaluated against the baseline and the current model; a human reviews it before it replaces production | Promote it automatically when it beats both, and notify admins via SNS when it does not |
 | Price alerts only reach verified emails | Amazon SES starts in sandbox mode in new accounts (`aws ses verify-email-identity --email-address <email>`) | Request SES production access and send from our own domain |
 | Shared account limits | Only eu-north-1 is allowed and Lambdas have 512 MB at most; the ESADE sandbox lacked permissions for Cognito, Amplify, Step Functions, SNS and SES | Same Terraform in a production account, without changing the architecture |
-| Phase C features behind flags | They were built step by step and switched on once tested (see the warning in *Deploy*) | Put the flag values in the code so a redeploy cannot switch them off |
 | No server-side API cache | HTTP APIs have no cache; a REST API cache costs ~14 $/month | Browser caching (`Cache-Control`) is in place; add a REST API or CloudFront cache if traffic grows |
 
 **Future features:** cheapest station on your route, price history charts, a mobile app with push notifications, and CI/CD that deploys from GitHub after each merge (GitOps).
