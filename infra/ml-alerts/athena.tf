@@ -18,11 +18,11 @@ resource "aws_glue_catalog_table" "clean_prices" {
     "projection.date.format"        = "yyyy-MM-dd"
     "projection.date.interval"      = "1"
     "projection.date.interval.unit" = "DAYS"
-    "storage.location.template"     = "s3://${var.retraining_lake_bucket}/clean/date=$${date}/"
+    "storage.location.template"     = "s3://${local.lake_bucket}/clean/date=$${date}/"
   }
 
   storage_descriptor {
-    location      = "s3://${var.retraining_lake_bucket}/clean/"
+    location      = "s3://${local.lake_bucket}/clean/"
     input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
 
@@ -89,7 +89,7 @@ resource "aws_athena_workgroup" "ml" {
     bytes_scanned_cutoff_per_query     = 1073741824
 
     result_configuration {
-      output_location = "s3://${var.retraining_lake_bucket}/athena-results/ml/"
+      output_location = "s3://${local.lake_bucket}/athena-results/ml/"
 
       encryption_configuration {
         encryption_option = "SSE_S3"

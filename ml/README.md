@@ -302,30 +302,20 @@ Phase C infrastructure is located in:
 
 ### Important Deployment Variables
 
-**The retraining resources are disabled by default in Terraform.**
+**Phase C is switched on by default in Terraform**, exactly as deployed in the shared account:
 
-In `retraining.tf`:
+- `ml-alerts`: `enable_predict_runtime`, `enable_alert_publish`, `enable_alert_delivery`, `enable_ml_retraining` and `enable_weekly_scheduler` default to `true`; `alert_sender_email` defaults to the verified SES sender.
+- `retraining_lake_bucket` defaults to empty, which means the lake bucket of `core`.
+- `processing`: `use_ml_predict = true` makes the Step Functions workflow call `smartfuel-predict-ml`.
 
-- `enable_ml_retraining` defaults to `false`.
-- `enable_weekly_scheduler` defaults to `false`.
-
-When maintaining the already deployed Phase C infrastructure, both variables must be set to `true`.
-
-Example:
+So the normal script keeps everything running:
 
 ```bash
-export AWS_PROFILE=smartfuel-sandbox
-export TF_VAR_region=eu-north-1
-export TF_VAR_state_bucket=smartfuel-tfstate-182018074319
-export TF_VAR_retraining_lake_bucket=smartfuel-lake-182018074319-use1
-export TF_VAR_enable_ml_retraining=true
-export TF_VAR_enable_weekly_scheduler=true
-
-terraform -chdir=infra/ml-alerts plan
-terraform -chdir=infra/ml-alerts apply
+./scripts/deploy.sh --plan ml-alerts processing   # must show nothing to destroy
+./scripts/deploy.sh ml-alerts processing
 ```
 
-**Warning:** Running Terraform with the default values may cause the retraining resources to be removed and the Scheduler to be disabled or removed.
+Set a variable to `false` (for example `TF_VAR_enable_weekly_scheduler=false`) only to switch that part off.
 
 Always review `terraform plan` before applying changes.
 

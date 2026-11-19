@@ -4,17 +4,18 @@
 
 variable "enable_ml_retraining" {
   type    = bool
-  default = false
+  default = true
 }
 
 variable "enable_weekly_scheduler" {
   type    = bool
-  default = false
+  default = true
 }
 
 variable "retraining_lake_bucket" {
-  type    = string
-  default = ""
+  description = "Lake bucket used by the ML Lambdas and Athena. Empty = the lake bucket of core"
+  type        = string
+  default     = ""
 }
 
 # Docker image repository
@@ -94,7 +95,7 @@ resource "aws_iam_role_policy" "ml_train" {
       {
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]
-        Resource = "arn:aws:s3:::${var.retraining_lake_bucket}"
+        Resource = "arn:aws:s3:::${local.lake_bucket}"
         Condition = {
           StringLike = {
             "s3:prefix" = [
@@ -107,25 +108,25 @@ resource "aws_iam_role_policy" "ml_train" {
       {
         Effect   = "Allow"
         Action   = ["s3:GetBucketLocation"]
-        Resource = "arn:aws:s3:::${var.retraining_lake_bucket}"
+        Resource = "arn:aws:s3:::${local.lake_bucket}"
       },
       {
         Effect = "Allow"
         Action = ["s3:GetObject"]
         Resource = [
-          "arn:aws:s3:::${var.retraining_lake_bucket}/clean/*",
-          "arn:aws:s3:::${var.retraining_lake_bucket}/athena-results/ml/*"
+          "arn:aws:s3:::${local.lake_bucket}/clean/*",
+          "arn:aws:s3:::${local.lake_bucket}/athena-results/ml/*"
         ]
       },
       {
         Effect   = "Allow"
         Action   = ["s3:PutObject", "s3:AbortMultipartUpload"]
-        Resource = "arn:aws:s3:::${var.retraining_lake_bucket}/athena-results/ml/*"
+        Resource = "arn:aws:s3:::${local.lake_bucket}/athena-results/ml/*"
       },
       {
         Effect   = "Allow"
         Action   = ["s3:PutObject"]
-        Resource = "arn:aws:s3:::${var.retraining_lake_bucket}/models/candidates/*"
+        Resource = "arn:aws:s3:::${local.lake_bucket}/models/candidates/*"
       },
       {
         Effect = "Allow"
@@ -167,20 +168,20 @@ resource "aws_iam_role_policy" "ml_evaluate" {
       {
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]
-        Resource = "arn:aws:s3:::${var.retraining_lake_bucket}"
+        Resource = "arn:aws:s3:::${local.lake_bucket}"
       },
       {
         Effect = "Allow"
         Action = ["s3:GetObject"]
         Resource = [
-          "arn:aws:s3:::${var.retraining_lake_bucket}/models/candidates/*",
-          "arn:aws:s3:::${var.retraining_lake_bucket}/models/production/metadata.json"
+          "arn:aws:s3:::${local.lake_bucket}/models/candidates/*",
+          "arn:aws:s3:::${local.lake_bucket}/models/production/metadata.json"
         ]
       },
       {
         Effect   = "Allow"
         Action   = ["s3:PutObject"]
-        Resource = "arn:aws:s3:::${var.retraining_lake_bucket}/models/candidates/*"
+        Resource = "arn:aws:s3:::${local.lake_bucket}/models/candidates/*"
       },
       {
         Effect = "Allow"
@@ -211,7 +212,7 @@ resource "aws_lambda_function" "ml_evaluate" {
 
   environment {
     variables = {
-      LAKE_BUCKET = var.retraining_lake_bucket
+      LAKE_BUCKET = local.lake_bucket
     }
   }
 
@@ -240,7 +241,7 @@ resource "aws_lambda_function" "ml_train" {
 
   environment {
     variables = {
-      LAKE_BUCKET                   = var.retraining_lake_bucket
+      LAKE_BUCKET                   = local.lake_bucket
       MODEL_OUTPUT_DIR              = "/tmp/smartfuel-model"
       TRAINING_SOURCE               = "athena"
       ATHENA_DATABASE               = aws_glue_catalog_database.ml.name

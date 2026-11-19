@@ -1,17 +1,20 @@
 
+# Phase C is switched on by default (as deployed in the shared account), so a
+# plain "deploy.sh ml-alerts" keeps it running. Set them to false to switch parts off.
 variable "enable_alert_publish" {
   type    = bool
-  default = false
+  default = true
 }
 
 variable "enable_alert_delivery" {
   type    = bool
-  default = false
+  default = true
 }
 
 variable "alert_sender_email" {
-  type    = string
-  default = ""
+  description = "Verified SES identity that sends the price alerts"
+  type        = string
+  default     = "marta.palet@alumni.esade.edu"
 }
 
 resource "aws_sns_topic" "price_alerts" {

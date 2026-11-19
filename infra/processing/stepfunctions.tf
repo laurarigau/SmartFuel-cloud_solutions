@@ -8,9 +8,18 @@
 #
 # Replaces the orchestrator Lambda "process" used while Step Functions was unavailable.
 
+data "aws_caller_identity" "current" {}
+
 locals {
   state_machine_name = "${var.project}-processing"
   dlq_url            = try(local.core.dlq_url, null)
+
+  # Predict step: explicit ARN > the Phase C model Lambda > the provisional predict Lambda
+  predict_lambda_arn = (
+    var.predict_lambda_arn != "" ? var.predict_lambda_arn :
+    var.use_ml_predict ? "arn:aws:lambda:${var.region}:${data.aws_caller_identity.current.account_id}:function:${var.project}-predict-ml" :
+    ""
+  )
 
   # Same retry policy on every task: 3 attempts in total, waiting 2 s then 4 s
   task_retry = [{
@@ -30,7 +39,7 @@ locals {
     Type     = "Task"
     Resource = "arn:aws:states:::lambda:invoke"
     Parameters = {
-      FunctionName = k == "predict" && var.predict_lambda_arn != "" ? var.predict_lambda_arn : f.arn
+      FunctionName = k == "predict" && local.predict_lambda_arn != "" ? local.predict_lambda_arn : f.arn
       "Payload.$"  = "$"
     }
     OutputPath = "$.Payload"
@@ -117,9 +126,9 @@ data "aws_iam_policy_document" "sfn" {
       flatten([
         for f in aws_lambda_function.lambda : [f.arn, "${f.arn}:*"]
       ]),
-      var.predict_lambda_arn == "" ? [] : [
-        var.predict_lambda_arn,
-        "${var.predict_lambda_arn}:*"
+      local.predict_lambda_arn == "" ? [] : [
+        local.predict_lambda_arn,
+        "${local.predict_lambda_arn}:*"
       ]
     )
   }

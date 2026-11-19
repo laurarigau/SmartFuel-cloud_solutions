@@ -26,7 +26,13 @@ variable "min_stations" {
 }
 
 variable "predict_lambda_arn" {
-  description = "Optional Phase C ML Lambda ARN. Empty keeps the original predict Lambda."
+  description = "Optional Phase C ML Lambda ARN. Empty = use_ml_predict decides."
   type        = string
   default     = ""
+}
+
+variable "use_ml_predict" {
+  description = "Predict with the Phase C model (Lambda <project>-predict-ml) instead of the provisional predict Lambda"
+  type        = bool
+  default     = true
 }

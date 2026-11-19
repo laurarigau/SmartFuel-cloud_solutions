@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        stack: [core, ingestion, processing, ml-alerts, web-api]
+        stack: [core, ingestion, processing, ml-alerts, web-api, monitoring]
 
     defaults:
       run:

@@ -8,7 +8,7 @@ set -euo pipefail
 # Default: eu-north-1 (Stockholm), the only region allowed in the shared account.
 # For the ESADE sandbox: export AWS_DEFAULT_REGION=us-east-1 before running it.
 REGION="${AWS_DEFAULT_REGION:-eu-north-1}"
-ALL_STACKS=(core ingestion processing ml-alerts web-api)
+ALL_STACKS=(core ingestion processing ml-alerts web-api monitoring)
 MODE="apply"
 
 if [[ "${1:-}" == "--plan" ]]; then
