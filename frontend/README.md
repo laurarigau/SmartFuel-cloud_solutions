@@ -31,6 +31,7 @@ Admins (Cognito group `admins`): `GET /admin/status` and `GET /admin/quarantine`
 | `styles.css` | Look and feel |
 | `geohash.js` | Same geohash (precision 5) as `scripts/seed_stations.py`: turns the visible map area into ~5 km cells |
 | `app.js` | Asks the API for the stations of each visible cell, draws them, shows the detail panel, and the "follow" form and "my stations" list |
+| `i18n.js` | Texts in Spanish and English and the ES / EN switch (Spanish browsers start in Spanish, the rest in English; the choice is remembered). Station data from the Ministry stays in Spanish |
 | `auth.js` | Log-in with Cognito's hosted page (OAuth 2.0 authorization code + PKCE); keeps the token for the session |
 | `config.example.js` | Template for `config.js` (API URL and Cognito) |
 
