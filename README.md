@@ -108,7 +108,7 @@ Each folder in `infra/` is its own Terraform stack with its own state (`<stack>/
 | A · Ingestion | Laura | Scheduler 4×/day → Lambda → S3 `raw/` | — |
 | B · Processing | Carla | Step Functions with retries, catch, SNS and DLQ; Parquet in `clean/`; prices in DynamoDB; history backfilled | Real model in predict (scikit-learn) |
 | C · Model & alerts | Marta | Model v0 vs baseline; check-alerts Lambda | Model in `models/production/`, emails (SNS → Lambda → SES), weekly retraining with Step Functions + Athena |
-| D · Web, API & auth | Marc | Map, prices, prediction, Cognito log-in, subscriptions, admin routes, browser caching, Amplify | Cheapest stations in the area |
+| D · Web, API & auth | Marc | Map, prices, prediction, cheapest stations in the area, Cognito log-in, subscriptions, admin routes, browser caching, Amplify | — |
 | Shared | — | IAM least privilege, encryption, logs | Admin emails subscribed to SNS, Athena table, CloudWatch alarms, budget alert |
 
 ## Git workflow

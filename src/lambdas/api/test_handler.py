@@ -276,3 +276,77 @@ def test_cache_headers(monkeypatch):
     assert error["headers"]["Cache-Control"] == "no-store"
     private = handler.lambda_handler({"routeKey": "GET /me", "requestContext": {"authorizer": {"jwt": {"claims": USER}}}}, None)
     assert private["headers"]["Cache-Control"] == "no-store"
+
+
+# ---------------------------------------------------------------------------
+# GET /cheapest: cheapest stations of an area for one fuel
+# ---------------------------------------------------------------------------
+def area_station(sid, lat, lon, cell="sp3e3"):
+    return {"station_id": sid, "name": f"Station {sid}", "municipality": "Barcelona",
+            "lat": Decimal(str(lat)), "lon": Decimal(str(lon)), "geohash5": cell}
+
+
+def use_area(monkeypatch, stations, prices):
+    use_fakes(monkeypatch, stations)
+    asked = []
+
+    def fake_batch(ids, fuel):
+        asked.append((sorted(ids), fuel))
+        return {sid: {"station_id": sid, "fuel_type": fuel, "price_eur": Decimal(p)}
+                for sid, p in prices.items() if sid in ids}
+
+    monkeypatch.setattr(handler, "batch_get_prices", fake_batch)
+    return asked
+
+
+def test_cheapest_sorted_by_price(monkeypatch):
+    stations = [area_station("1", 41.38, 2.17), area_station("2", 41.39, 2.18), area_station("3", 41.40, 2.16)]
+    asked = use_area(monkeypatch, stations, {"1": "1.559", "2": "1.499", "3": "1.529"})
+    status, body = call("GET /cheapest", query={"geohash": "sp3e3", "fuel": "gasolina_95_e5", "limit": "2"})
+    assert status == 200
+    assert [s["station_id"] for s in body["cheapest"]] == ["2", "3"]
+    assert body["cheapest"][0]["price_eur"] == 1.499
+    assert body["stations_in_area"] == 3 and body["with_price"] == 3
+    assert asked == [(["1", "2", "3"], "gasolina_95_e5")]
+
+
+def test_cheapest_skips_stations_without_price_and_outside_bbox(monkeypatch):
+    stations = [area_station("1", 41.38, 2.17), area_station("2", 41.39, 2.18), area_station("9", 42.50, 3.00)]
+    use_area(monkeypatch, stations, {"1": "1.6", "9": "0.9"})
+    status, body = call("GET /cheapest", query={"geohash": "sp3e3", "fuel": "glp", "bbox": "41.3,2.1,41.5,2.2"})
+    assert status == 200
+    assert body["stations_in_area"] == 2          # station 9 is outside the visible map
+    assert [s["station_id"] for s in body["cheapest"]] == ["1"]  # station 2 has no price
+
+
+def test_cheapest_validates_input(monkeypatch):
+    use_area(monkeypatch, [], {})
+    for query in ({"fuel": "glp"}, {"geohash": "sp3e3", "fuel": "diesel"},
+                  {"geohash": ",".join(["sp3e3"] * 31), "fuel": "glp"}, {"geohash": "zz!", "fuel": "glp"}):
+        assert call("GET /cheapest", query=query)[0] == 400, query
+
+
+def test_cheapest_is_cached_by_browser(monkeypatch):
+    use_area(monkeypatch, [area_station("1", 41.38, 2.17)], {"1": "1.5"})
+    res = handler.lambda_handler({"routeKey": "GET /cheapest",
+                                  "queryStringParameters": {"geohash": "sp3e3", "fuel": "glp"}}, None)
+    assert res["headers"]["Cache-Control"] == "public, max-age=300"
+
+
+def test_batch_get_prices_chunks_and_retries(monkeypatch):
+    monkeypatch.setenv("PRICES_TABLE", "prices")
+    calls = []
+
+    class FakeResource:
+        def batch_get_item(self, RequestItems):
+            keys = RequestItems["prices"]["Keys"]
+            calls.append(len(keys))
+            if len(calls) == 1:  # first call: DynamoDB leaves the last key unprocessed
+                return {"Responses": {"prices": [{"station_id": k["station_id"], "price_eur": 1} for k in keys[:-1]]},
+                        "UnprocessedKeys": {"prices": {"Keys": keys[-1:]}}}
+            return {"Responses": {"prices": [{"station_id": k["station_id"], "price_eur": 1} for k in keys]}}
+
+    monkeypatch.setattr(handler, "_dynamodb", FakeResource())
+    found = handler.batch_get_prices([str(i) for i in range(150)], "glp")
+    assert len(found) == 150
+    assert calls == [100, 1, 50]  # 100 keys max per call + the retried key

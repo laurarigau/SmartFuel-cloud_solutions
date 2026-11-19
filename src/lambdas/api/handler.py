@@ -4,6 +4,7 @@ Routes:
     GET /stations?geohash=sp3e3          -> stations in that ~5x5 km cell        (public)
     GET /stations/{id}                   -> one station + its latest prices      (public)
     GET /predictions/{id}                -> latest prediction for each fuel      (public)
+    GET /cheapest?geohash=a,b&fuel=...   -> cheapest stations of those cells for one fuel (public)
     GET /me                              -> who is logged in                     (JWT)
     GET /subscriptions                   -> stations the user follows            (JWT)
     POST /subscriptions                  -> follow {station_id, fuel_type, target_price} (JWT)
@@ -98,6 +99,97 @@ def list_stations(params):
 
     # stations barely change: 10 minutes
     return response(200, {"geohash": geohash, "count": len(items), "stations": items}, max_age=600)
+
+
+# ---------------------------------------------------------------------------
+# Cheapest stations in an area (the main question of the project)
+# ---------------------------------------------------------------------------
+MAX_CHEAPEST_CELLS = 30   # same limit as the web map
+BATCH_SIZE = 100          # DynamoDB BatchGetItem maximum
+
+
+def stations_in_cell(stations, geohash):
+    items, kwargs = [], {"IndexName": "geohash5-index", "KeyConditionExpression": Key("geohash5").eq(geohash)}
+    while True:
+        page = stations.query(**kwargs)
+        items.extend(page["Items"])
+        if "LastEvaluatedKey" not in page:
+            return items
+        kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+
+
+def batch_get_prices(station_ids, fuel):
+    """Latest price of one fuel for many stations: BatchGetItem, 100 keys per call.
+    Separate function so tests can replace it. Returns {station_id: item}."""
+    global _dynamodb
+    if _dynamodb is None:
+        _dynamodb = boto3.resource("dynamodb")
+    table = os.environ["PRICES_TABLE"]
+    found = {}
+    for i in range(0, len(station_ids), BATCH_SIZE):
+        request = {table: {"Keys": [{"station_id": sid, "fuel_type": fuel} for sid in station_ids[i:i + BATCH_SIZE]]}}
+        while request:  # DynamoDB may return part of the keys as "unprocessed": ask again
+            page = _dynamodb.batch_get_item(RequestItems=request)
+            for item in page["Responses"].get(table, []):
+                found[item["station_id"]] = item
+            request = page.get("UnprocessedKeys") or None
+    return found
+
+
+def parse_bbox(text):
+    """'south,west,north,east' -> 4 floats, or None if missing / invalid."""
+    try:
+        s, w, n, e = (float(x) for x in text.split(","))
+    except (AttributeError, ValueError):
+        return None
+    return (s, w, n, e) if s <= n and w <= e else None
+
+
+def cheapest(params):
+    params = params or {}
+    cells = [c for c in params.get("geohash", "").lower().split(",") if c]
+    fuel = params.get("fuel", "")
+    if not cells or len(cells) > MAX_CHEAPEST_CELLS or not all(GEOHASH_RE.match(c) for c in cells):
+        return response(400, {"error": f"'geohash' must be 1 to {MAX_CHEAPEST_CELLS} geohash cells separated by commas"})
+    if fuel not in FUEL_TYPES:
+        return response(400, {"error": f"'fuel' must be one of {FUEL_TYPES}"})
+    try:
+        limit = min(max(int(params.get("limit", 10)), 1), 50)
+    except ValueError:
+        return response(400, {"error": "'limit' must be a number"})
+    bbox = parse_bbox(params.get("bbox"))  # optional: only stations inside the visible map
+
+    stations, _ = tables()
+    area = {}
+    for cell in dict.fromkeys(cells):  # skip repeated cells
+        for st in stations_in_cell(stations, cell):
+            if bbox and not (bbox[0] <= float(st["lat"]) <= bbox[2] and bbox[1] <= float(st["lon"]) <= bbox[3]):
+                continue
+            area[st["station_id"]] = st
+
+    prices = batch_get_prices(list(area), fuel)
+    ranked = sorted(
+        (
+            {
+                "station_id": sid,
+                "name": area[sid].get("name"),
+                "address": area[sid].get("address"),
+                "municipality": area[sid].get("municipality"),
+                "lat": area[sid].get("lat"),
+                "lon": area[sid].get("lon"),
+                "price_eur": item["price_eur"],
+                "ts": item.get("ts"),
+            }
+            for sid, item in prices.items() if item.get("price_eur") is not None
+        ),
+        key=lambda r: (r["price_eur"], r["station_id"]),
+    )
+    return response(200, {
+        "fuel": fuel,
+        "stations_in_area": len(area),
+        "with_price": len(ranked),
+        "cheapest": ranked[:limit],
+    }, max_age=300)  # prices change up to 4 times a day
 
 
 def get_station(station_id):
@@ -338,6 +430,8 @@ def lambda_handler(event, context):
         return get_station(event["pathParameters"]["id"])
     if route == "GET /predictions/{id}":
         return get_predictions(event["pathParameters"]["id"])
+    if route == "GET /cheapest":
+        return cheapest(event.get("queryStringParameters"))
     if route in PRIVATE_ROUTES:
         if not claims(event).get("sub"):  # API Gateway already checks it; defence in depth
             return response(401, {"error": "Log in first"})
