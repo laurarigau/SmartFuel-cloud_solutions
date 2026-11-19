@@ -1,5 +1,6 @@
 // SmartFuel Forecast · map of stations (Phase D)
-// Public:  GET /stations?geohash=xxxxx, GET /stations/{id}, GET /predictions/{id}
+// Public:  GET /stations?geohash=xxxxx, GET /stations/{id}, GET /predictions/{id},
+//          GET /cheapest?geohash=a,b&fuel=... (cheapest stations in the visible area)
 // Log-in:  GET/POST /subscriptions, DELETE /subscriptions/{station_fuel} (Cognito token, see auth.js)
 
 const API_URL = (window.SMARTFUEL_CONFIG || {}).API_URL;
@@ -103,6 +104,7 @@ async function refreshStations() {
   }
   if (map.getZoom() < MIN_ZOOM_FOR_STATIONS) {
     setStatus("Acerca el mapa a una zona para ver sus gasolineras.");
+    document.getElementById("cheapest").classList.add("hidden");
     return;
   }
 
@@ -110,6 +112,7 @@ async function refreshStations() {
   const cells = geohashCellsForBounds(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
   if (cells.length > MAX_CELLS) {
     setStatus("Zona demasiado grande: acerca un poco más el mapa.");
+    document.getElementById("cheapest").classList.add("hidden");
     return;
   }
 
@@ -120,6 +123,8 @@ async function refreshStations() {
     stations.forEach(addMarker);
     const visible = stations.filter(s => b.contains([s.lat, s.lon])).length;
     setStatus(visible === 1 ? "1 gasolinera en esta zona." : `${visible} gasolineras en esta zona.`);
+    lastArea = { cells, bounds: b };
+    loadCheapest();
   } catch (err) {
     setStatus(`No se han podido cargar las gasolineras: ${err.message}`, true);
   }
@@ -208,6 +213,66 @@ async function showDetail(stationId) {
     document.getElementById("d-prediction").textContent = "No se ha podido cargar la previsión.";
   }
 }
+
+// ---------------------------------------------------------------------------
+// Cheapest stations in the visible area (GET /cheapest)
+// ---------------------------------------------------------------------------
+let lastArea = null; // { cells, bounds } of the last area loaded on the map
+const cheapFuel = document.getElementById("cheap-fuel");
+for (const [value, label] of Object.entries(FUEL_LABELS)) {
+  cheapFuel.append(new Option(label, value));
+}
+
+function renderCheapest(data) {
+  const list = document.getElementById("cheap-list");
+  const note = document.getElementById("cheap-note");
+  list.replaceChildren();
+  if (data.cheapest.length === 0) {
+    note.textContent = data.stations_in_area
+      ? "Todavía no hay precios de este carburante en la zona."
+      : "No hay gasolineras en esta zona.";
+    return;
+  }
+  for (const st of data.cheapest) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    const name = document.createElement("span");
+    name.className = "cheap-name";
+    name.textContent = st.municipality ? `${st.name} · ${st.municipality}` : st.name;
+    const price = document.createElement("span");
+    price.className = "cheap-price";
+    price.textContent = `${Number(st.price_eur).toFixed(3)} €/L`;
+    btn.append(name, price);
+    btn.addEventListener("click", () => {
+      map.setView([st.lat, st.lon], Math.max(map.getZoom(), 15));
+      showDetail(st.station_id);
+    });
+    li.append(btn);
+    list.append(li);
+  }
+  note.textContent = `${data.with_price} de ${data.stations_in_area} gasolineras con precio de ${FUEL_LABELS[data.fuel]}.`;
+}
+
+async function loadCheapest() {
+  if (!lastArea) return;
+  const section = document.getElementById("cheapest");
+  const b = lastArea.bounds;
+  const params = new URLSearchParams({
+    geohash: lastArea.cells.join(","),
+    fuel: cheapFuel.value,
+    limit: "5",
+    bbox: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(n => n.toFixed(4)).join(","),
+  });
+  try {
+    renderCheapest(await fetchJson(`cheapest?${params}`));
+    section.classList.remove("hidden");
+  } catch (err) {
+    section.classList.add("hidden"); // the map keeps working without the ranking
+    console.warn("cheapest:", err);
+  }
+}
+cheapFuel.addEventListener("change", loadCheapest);
 
 // ---------------------------------------------------------------------------
 // Log-in and "follow this station"

@@ -5,6 +5,7 @@
 #   [x] Lambda "api" (src/lambdas/api): GET /stations?geohash=, GET /stations/{id}
 #   [x] API Gateway HTTP API with throttling, public routes
 #   [x] GET /predictions/{id}
+#   [x] GET /cheapest?geohash=a,b&fuel=... (cheapest stations in the visible area)
 #   [x] Cognito User Pool + hosted login + group "admins" (cognito.tf)
 #   [x] JWT authorizer on private routes: GET /me, GET/POST/DELETE /subscriptions
 #   [x] Admin routes (group "admins"): GET /admin/status, GET /admin/quarantine
@@ -51,7 +52,7 @@ data "aws_iam_policy_document" "api" {
 
   statement {
     sid       = "ReadLatestPrices"
-    actions   = ["dynamodb:Query"]
+    actions   = ["dynamodb:Query", "dynamodb:BatchGetItem"]
     resources = [local.core.table_arns.latest_prices]
   }
 
@@ -161,6 +162,12 @@ resource "aws_apigatewayv2_route" "get_station" {
 resource "aws_apigatewayv2_route" "get_predictions" {
   api_id    = aws_apigatewayv2_api.http.id
   route_key = "GET /predictions/{id}"
+  target    = "integrations/${aws_apigatewayv2_integration.api.id}"
+}
+
+resource "aws_apigatewayv2_route" "cheapest" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "GET /cheapest"
   target    = "integrations/${aws_apigatewayv2_integration.api.id}"
 }
 

@@ -184,3 +184,34 @@ body {
 .admin-sub { margin: 8px 0 4px; font-size: 13px; color: var(--muted); }
 .admin-quarantine { list-style: none; margin: 0; padding: 0; font-size: 13px; }
 .admin-quarantine li { padding: 4px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+
+/* Cheapest stations in the visible area */
+.cheapest { margin-bottom: 16px; }
+.cheapest-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cheapest-head h3 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.cheapest-head select { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; min-height: 36px; background: #fff; }
+.cheap-list { list-style: none; margin: 0; padding: 0; counter-reset: cheap; }
+.cheap-list li { counter-increment: cheap; }
+.cheap-list button {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 4px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+}
+.cheap-list button:hover { background: var(--bg); }
+.cheap-list button::before { content: counter(cheap); color: var(--muted); font-weight: 600; text-align: center; }
+.cheap-list li:first-child button { font-weight: 600; }
+.cheap-list .cheap-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cheap-list .cheap-price { font-variant-numeric: tabular-nums; font-weight: 600; }
+.cheap-list li:first-child .cheap-price { color: var(--down); }
+.cheap-note { margin: 6px 0 0; font-size: 13px; }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Deploy the whole SmartFuel project or selected stacks.
-# Each team member deploys into their own AWS Sandbox account.
+# Everything goes to the shared AWS account (one state bucket per account).
 
 set -euo pipefail
 
