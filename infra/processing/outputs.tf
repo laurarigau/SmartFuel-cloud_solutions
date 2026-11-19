@@ -1,8 +1,10 @@
 output "lambda_names" {
-  value = merge(
-    { for k, f in aws_lambda_function.lambda : k => f.function_name },
-    { process = aws_lambda_function.process.function_name },
-  )
+  value = { for k, f in aws_lambda_function.lambda : k => f.function_name }
+}
+
+output "state_machine_arn" {
+  description = "Step Functions state machine that processes each raw/ file"
+  value       = aws_sfn_state_machine.processing.arn
 }
 
 output "raw_created_rule" {

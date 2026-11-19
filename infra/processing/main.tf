@@ -2,15 +2,15 @@
 # Owner: Carla Escassi
 #
 #   [x] Lambdas validate / clean / save-changes / predict (src/lambdas/*), one least-privilege role each
-#   [x] EventBridge rule: S3 "Object Created" on raw/ -> orchestrator Lambda "process" (process.tf)
-#   [x] Orchestrator: validate -> (valid?) -> clean -> save-changes | predict in parallel,
-#       retry with backoff + catch -> admin alert, failed events -> DLQ (when it exists)
+#   [x] Step Functions state machine smartfuel-processing (stepfunctions.tf):
+#       validate -> (valid?) -> clean -> save-changes | predict in parallel,
+#       Retry (3 attempts) + Catch -> SNS admin-alerts on every step
+#   [x] EventBridge rule: S3 "Object Created" on raw/ -> state machine, undeliverable events -> SQS DLQ
 #
-# Step Functions is not available in the university sandbox (see ml/README.md), so the
-# orchestrator Lambda does what the state machine in the diagram would do.
 # SNS / SQS are optional: core creates them only when enable_messaging = true.
 #
-# Manual test: scripts/test_processing.sh (uploads fixtures/fuel_prices_sample.json and runs the 4 Lambdas)
+# Manual test: scripts/test_processing.sh (runs the state machine on the latest raw/ file)
+# History:     scripts/backfill_clean.sh  (validate + clean only, oldest first)
 
 locals {
   lake_arn    = local.core.lake_bucket_arn
