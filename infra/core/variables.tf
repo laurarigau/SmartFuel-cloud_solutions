@@ -21,10 +21,16 @@ variable "raw_to_glacier_days" {
   default     = 30
 }
 
+# Kept in the code (not only in an export) so a later "deploy.sh core" does not remove them
 variable "admin_emails" {
   description = "Emails subscribed to the admin-alerts SNS topic (each must confirm the subscription)"
   type        = list(string)
-  default     = []
+  default = [
+    "marta.palet@alumni.esade.edu",
+    "marc.farras@alumni.esade.edu",
+    "carla.escassi@alumni.esade.edu",
+    "laura.rigau@alumni.esade.edu",
+  ]
 }
 
 variable "enable_messaging" {
