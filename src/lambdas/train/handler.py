@@ -50,8 +50,8 @@ def lambda_handler(event, context):
 
     candidate_prefix = result["candidate_prefix"]
 
-    # Step Functions is blocked in the sandbox.
-    # Invoke evaluation directly if configured.
+    # Step Functions performs evaluation in the shared account.
+    # Legacy direct invocation remains optional.
     evaluator = os.environ.get("EVALUATE_FUNCTION_NAME")
 
     if evaluator:
