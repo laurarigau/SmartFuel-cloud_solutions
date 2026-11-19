@@ -136,7 +136,7 @@ def test_subscription_above_threshold_generates_no_alert(handler):
         "station_id": "4375",
         "fuel_type": "gasolina_95_e5",
         "old_price": handler.Decimal("1.60"),
-        "new_price": handler.Decimal("1.55")
+        "new_price": handler.Decimal("1.56")
     }
 
     table = FakeSubscriptionsTable([{
@@ -201,3 +201,36 @@ def test_lambda_handler_no_price_changes(handler):
 
     assert result["price_drops"] == 0
     assert result["alerts_matched"] == 0
+
+
+def test_large_drop_even_above_target(handler):
+    table = FakeSubscriptionsTable([{
+        "user_id": "user123",
+        "email": "example@test.com",
+        "station_fuel": "4375#gasolina_95_e5",
+        "target_price": handler.Decimal("1.40"),
+    }])
+    drops = [{
+        "station_id": "4375",
+        "fuel_type": "gasolina_95_e5",
+        "old_price": handler.Decimal("1.60"),
+        "new_price": handler.Decimal("1.50"),
+    }]
+    result = handler.find_matching_alerts(drops, table)
+    assert len(result) == 1
+    assert result[0]["reason"] == "large_drop"
+
+
+def test_missing_email_is_skipped(handler):
+    table = FakeSubscriptionsTable([{
+        "user_id": "user123",
+        "station_fuel": "4375#gasolina_95_e5",
+        "target_price": handler.Decimal("1.40"),
+    }])
+    drops = [{
+        "station_id": "4375",
+        "fuel_type": "gasolina_95_e5",
+        "old_price": handler.Decimal("1.60"),
+        "new_price": handler.Decimal("1.50"),
+    }]
+    assert handler.find_matching_alerts(drops, table) == []
