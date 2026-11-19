@@ -111,7 +111,7 @@ const Auth = (() => {
 
     const pkce = JSON.parse(sessionStorage.getItem("smartfuel.pkce") || "{}");
     sessionStorage.removeItem("smartfuel.pkce");
-    if (!pkce.verifier || pkce.state !== state) throw new Error("La sesión de login no coincide, vuelve a intentarlo.");
+    if (!pkce.verifier || pkce.state !== state) throw new Error(t("auth.mismatch"));
 
     save(await tokenRequest({
       grant_type: "authorization_code",
