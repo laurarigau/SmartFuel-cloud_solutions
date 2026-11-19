@@ -6,6 +6,15 @@ Cloud Solutions project — Carla Escassi, Marc Farràs, Laura Rigau, Marta Pale
 
 **Live web app:** https://main.dtmg8q0mjq0b4.amplifyapp.com/ (public map and prices; log in to follow stations)
 
+## What it does
+
+- **Map** of the ~11,500 petrol stations in Spain with their current prices, updated 4 times a day.
+- **Cheapest stations in the area** you are looking at, for the fuel you choose.
+- **Forecast** for each station and fuel: the price will go up, go down or stay the same (ML model compared with a baseline).
+- **Price alerts:** log in, follow a station with a target price and get an email when it drops.
+- **Admin panel** (Cognito group `admins`): pipeline health and quarantined files.
+- Web in **Spanish and English**.
+
 ## Architecture
 
 ```
@@ -107,17 +116,31 @@ docs/contracts.md
 
 Each folder in `infra/` is its own Terraform stack with its own state (`<stack>/terraform.tfstate`). Phase stacks read the shared resources from `core` (`local.core.lake_bucket`, `local.core.tables.stations`, ...). Names, keys and payloads shared between phases are in `docs/contracts.md`.
 
-## Status
+## Final status
+
+The whole pipeline runs on its own in the shared account: ingestion 4 times a day → Step Functions processing → prices and predictions in DynamoDB → web, API and email alerts; the model is retrained every week.
 
 | Phase | Owner | Done | Pending |
 |---|---|---|---|
 | A · Ingestion | Laura | Scheduler 4×/day → Lambda → S3 `raw/` | — |
 | B · Processing | Carla | Step Functions with retries, catch, SNS and DLQ; Parquet in `clean/`; prices in DynamoDB; history backfilled; predict uses the Phase C model | — |
-| C · Model & alerts | Marta | Model vs baseline in `models/production/`, used by predict; price alerts check-alerts → SNS → send-email → SES; weekly retraining with Step Functions + Athena (Glue table) | Automatic promotion of a better model + SNS to admins when it is not better (the draft asks for it; now the evaluation only marks the candidate for manual review); SES production access (see below) |
+| C · Model & alerts | Marta | Model vs baseline in `models/production/`, used by predict; price alerts check-alerts → SNS → send-email → SES; weekly retraining with Step Functions + Athena (Glue table) | Automatic model promotion, SES production access (see *Limitations*) |
 | D · Web, API & auth | Marc | Map, prices, prediction, cheapest stations in the area, Cognito log-in, subscriptions, admin routes, browser caching, Spanish/English, Amplify | — |
-| Shared | — | IAM least privilege, encryption at rest and in transit, CloudWatch logs, admin emails subscribed to SNS | CloudWatch alarms, budget alert |
+| Shared | — | IAM least privilege, encryption at rest and in transit, CloudWatch logs, admin emails subscribed to SNS | CloudWatch alarms, budget alert (see *Limitations*) |
 
-**SES sandbox:** the account is still in the SES sandbox, so price alerts only reach **verified** email addresses (`aws ses verify-email-identity --email-address <email>`). Production access would let any registered user receive them.
+## Limitations and next steps
+
+| Limitation | Why | Next step |
+|---|---|---|
+| No CloudWatch alarms yet | We prioritised the data pipeline. Logs and metrics are in place, and the admin panel shows the pipeline health | Alarms on Lambda errors, failed Step Functions runs and a stopped ingestion, emailed to admins via SNS |
+| No budget alert | The AWS Free plan cannot charge us: when the credits run out, AWS closes the account | AWS Budgets alert in Terraform for a paid account |
+| Model promotion is manual | Every week a candidate model is trained and evaluated against the baseline and the current model; a human reviews it before it replaces production | Promote it automatically when it beats both, and notify admins via SNS when it does not |
+| Price alerts only reach verified emails | Amazon SES starts in sandbox mode in new accounts (`aws ses verify-email-identity --email-address <email>`) | Request SES production access and send from our own domain |
+| Shared account limits | Only eu-north-1 is allowed and Lambdas have 512 MB at most; the ESADE sandbox lacked permissions for Cognito, Amplify, Step Functions, SNS and SES | Same Terraform in a production account, without changing the architecture |
+| Phase C features behind flags | They were built step by step and switched on once tested (see the warning in *Deploy*) | Put the flag values in the code so a redeploy cannot switch them off |
+| No server-side API cache | HTTP APIs have no cache; a REST API cache costs ~14 $/month | Browser caching (`Cache-Control`) is in place; add a REST API or CloudFront cache if traffic grows |
+
+**Future features:** cheapest station on your route, price history charts, a mobile app with push notifications, and CI/CD that deploys from GitHub after each merge (GitOps).
 
 ## Git workflow
 
