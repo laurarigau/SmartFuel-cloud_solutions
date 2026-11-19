@@ -19,7 +19,10 @@ Ministry API ──(EventBridge Scheduler, 4×/day)──► Lambda ingest ─�
                                                                                      │ Streams
                                                                                      ▼
                                                      Lambda check-alerts ──► SNS ──► Lambda ──► SES email
-Browser ──► Amplify (static web) ──► API Gateway HTTP API (+ Cognito JWT) ──► Lambda api ──► DynamoDB
+Browser ──► Amplify (static web, ES/EN) ──► API Gateway HTTP API (+ Cognito JWT) ──► Lambda api ──► DynamoDB
+
+Weekly: EventBridge Scheduler ──► Step Functions smartfuel-ml-retraining: Train (Athena over clean/) → Evaluate
+          candidate in models/candidates/<date>/ with evaluation.json (vs baseline and current model) → manual promotion to models/production/
 ```
 
 Everything is serverless (no EC2, RDS, NAT or VPC), defined in Terraform, with one least-privilege IAM role per Lambda / workflow.
@@ -70,6 +73,8 @@ python scripts/seed_stations.py <file> # load stations into DynamoDB from a Mini
 
 Order: `core` → `ingestion` → `processing` → `ml-alerts` → `web-api`. The first run creates the state bucket `smartfuel-tfstate-<account-id>`.
 
+> ⚠️ **Phase C switches.** In `ml-alerts`, the real-model predict, the email delivery and the weekly retraining are behind variables that default to `false` (`enable_predict_runtime`, `enable_alert_publish`, `enable_alert_delivery`, `enable_ml_retraining`, `enable_weekly_scheduler`, plus `alert_sender_email`), and `processing` only uses the real model when `predict_lambda_arn` is set. They are **on** in the shared account. Running `deploy.sh ml-alerts` or `deploy.sh processing` without those values would switch them off again: ask Marta for them (see `ml/README.md`) and always run `--plan` first — it must not show anything to destroy.
+
 Shared resources (`core`) are used by everyone: announce in the group before deploying it, and never run `deploy.sh` without a stack name unless you mean to update everything.
 
 Other scripts:
@@ -89,12 +94,13 @@ infra/
   core/          # shared: S3 lake (lifecycle, encryption, TLS only), DynamoDB tables, SNS topics, SQS DLQ
   ingestion/     # Phase A · EventBridge Scheduler + ingest Lambda
   processing/    # Phase B · S3 event rule, Step Functions, validate/clean/save-changes/predict Lambdas
-  ml-alerts/     # Phase C · Streams -> check-alerts Lambda, weekly retraining (ECR + Lambdas)
+  ml-alerts/     # Phase C · Streams -> check-alerts -> SNS -> send-email (SES); predict with the real model
+                 #           (container image in ECR); weekly retraining (Step Functions + Athena/Glue)
   web-api/       # Phase D · HTTP API + Lambda, Cognito, admin routes, Amplify
 scripts/         # deploy, publish, seed, test and backfill scripts (+ exploration/: first API tests)
 src/lambdas/     # one folder per Lambda: handler.py + test_handler.py
-frontend/        # static web app: map, log-in, follow stations, admin panel
-ml/              # model v0 notebook, training and history loader
+frontend/        # static web app: map, cheapest stations in the area, log-in, follow stations, admin panel, ES/EN
+ml/              # model notebook, training, history loader (Athena) and Dockerfiles for the ML Lambdas
 fixtures/        # small sample files for tests (raw_sample.json = 50 real stations)
 docs/contracts.md
 ```
@@ -106,10 +112,12 @@ Each folder in `infra/` is its own Terraform stack with its own state (`<stack>/
 | Phase | Owner | Done | Pending |
 |---|---|---|---|
 | A · Ingestion | Laura | Scheduler 4×/day → Lambda → S3 `raw/` | — |
-| B · Processing | Carla | Step Functions with retries, catch, SNS and DLQ; Parquet in `clean/`; prices in DynamoDB; history backfilled | Real model in predict (scikit-learn) |
-| C · Model & alerts | Marta | Model v0 vs baseline; check-alerts Lambda | Model in `models/production/`, emails (SNS → Lambda → SES), weekly retraining with Step Functions + Athena |
-| D · Web, API & auth | Marc | Map, prices, prediction, cheapest stations in the area, Cognito log-in, subscriptions, admin routes, browser caching, Amplify | — |
-| Shared | — | IAM least privilege, encryption, logs | Admin emails subscribed to SNS, Athena table, CloudWatch alarms, budget alert |
+| B · Processing | Carla | Step Functions with retries, catch, SNS and DLQ; Parquet in `clean/`; prices in DynamoDB; history backfilled; predict uses the Phase C model | — |
+| C · Model & alerts | Marta | Model vs baseline in `models/production/`, used by predict; price alerts check-alerts → SNS → send-email → SES; weekly retraining with Step Functions + Athena (Glue table) | Automatic promotion of a better model + SNS to admins when it is not better (the draft asks for it; now the evaluation only marks the candidate for manual review); SES production access (see below) |
+| D · Web, API & auth | Marc | Map, prices, prediction, cheapest stations in the area, Cognito log-in, subscriptions, admin routes, browser caching, Spanish/English, Amplify | — |
+| Shared | — | IAM least privilege, encryption at rest and in transit, CloudWatch logs, admin emails subscribed to SNS | CloudWatch alarms, budget alert |
+
+**SES sandbox:** the account is still in the SES sandbox, so price alerts only reach **verified** email addresses (`aws ses verify-email-identity --email-address <email>`). Production access would let any registered user receive them.
 
 ## Git workflow
 
