@@ -1,0 +1,15 @@
+
+FROM public.ecr.aws/lambda/python:3.12
+
+RUN pip install --no-cache-dir --only-binary=:all: \
+    numpy==1.26.4 \
+    scipy==1.14.1 \
+    pandas==2.2.3 \
+    pyarrow==17.0.0 \
+    scikit-learn==1.8.0 \
+    joblib==1.5.3 \
+    boto3
+
+COPY src/lambdas/predict/handler.py ${LAMBDA_TASK_ROOT}/handler.py
+COPY ml/predict_smoke.py ${LAMBDA_TASK_ROOT}/predict_smoke.py
+CMD ["handler.lambda_handler"]
