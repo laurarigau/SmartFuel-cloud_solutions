@@ -144,3 +144,135 @@ if __name__ == "__main__":
     print("Unique timestamps:", df["ts"].nunique())
     print("First snapshot:", df["ts"].min())
     print("Last snapshot:", df["ts"].max())
+
+def load_history_from_athena(
+    database="smartfuel_ml",
+    table="clean_prices",
+    workgroup="smartfuel-ml",
+    lookback_days=14,
+    region=None,
+    station_sample_modulus=1,
+):
+    """Read clean historical prices through Athena."""
+
+    import boto3
+    import re
+    import tempfile
+    import time
+
+    from datetime import datetime, timedelta, timezone
+    from urllib.parse import urlparse
+
+    for identifier in (database, table):
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", identifier):
+            raise ValueError(f"Invalid Athena identifier: {identifier}")
+
+    if lookback_days < 1 or station_sample_modulus < 1:
+        raise ValueError("Lookback days and sample modulus must be positive.")
+
+    region = region or os.environ.get("AWS_DEFAULT_REGION", "eu-north-1")
+
+    end_date = datetime.now(timezone.utc).date()
+    start_date = end_date - timedelta(days=lookback_days - 1)
+
+    sample_filter = ""
+    if station_sample_modulus > 1:
+        sample_filter = (
+            "AND MOD(TRY_CAST(station_id AS BIGINT), "
+            f"{station_sample_modulus}) = 0"
+        )
+
+    query = f"""
+        SELECT station_id, fuel_type, price_eur, ts, province
+        FROM "{database}"."{table}"
+        WHERE "date" BETWEEN '{start_date}' AND '{end_date}'
+          AND fuel_type IN ('gasolina_95_e5', 'gasoleo_a')
+          AND price_eur > 0
+          AND station_id IS NOT NULL
+          AND ts IS NOT NULL
+          AND province IS NOT NULL
+          {sample_filter}
+    """
+
+    athena = boto3.client("athena", region_name=region)
+    s3 = boto3.client("s3", region_name=region)
+
+    response = athena.start_query_execution(
+        QueryString=query,
+        QueryExecutionContext={"Database": database},
+        WorkGroup=workgroup,
+    )
+    query_id = response["QueryExecutionId"]
+    print(f"Athena query started: {query_id}")
+
+    execution = None
+
+    for _ in range(150):
+        execution = athena.get_query_execution(
+            QueryExecutionId=query_id
+        )["QueryExecution"]
+
+        status = execution["Status"]
+        state = status["State"]
+
+        if state == "SUCCEEDED":
+            break
+
+        if state in ("FAILED", "CANCELLED"):
+            reason = status.get("StateChangeReason", "Unknown error")
+            raise RuntimeError(f"Athena {state}: {reason}")
+
+        time.sleep(2)
+    else:
+        raise TimeoutError(f"Athena query timed out: {query_id}")
+
+    output_location = execution["ResultConfiguration"]["OutputLocation"]
+    parsed = urlparse(output_location)
+
+    if parsed.scheme != "s3" or not parsed.netloc:
+        raise ValueError("Invalid Athena result location.")
+
+    with tempfile.TemporaryDirectory() as tempdir:
+        csv_path = str(Path(tempdir) / "athena_history.csv")
+
+        s3.download_file(
+            parsed.netloc,
+            parsed.path.lstrip("/"),
+            csv_path,
+        )
+
+        history = pd.read_csv(
+            csv_path,
+            dtype={
+                "station_id": "string",
+                "fuel_type": "string",
+                "province": "string",
+            },
+        )
+
+    history["ts"] = pd.to_datetime(history["ts"], errors="coerce")
+    history["price_eur"] = pd.to_numeric(
+        history["price_eur"], errors="coerce"
+    )
+
+    history = history.dropna(
+        subset=["station_id", "fuel_type", "price_eur", "ts", "province"]
+    )
+
+    history = history.drop_duplicates(
+        subset=["station_id", "fuel_type", "ts"],
+        keep="last",
+    )
+
+    history = history.sort_values(
+        ["station_id", "fuel_type", "ts"]
+    ).reset_index(drop=True)
+
+    if history.empty:
+        raise ValueError("No usable historical observations from Athena.")
+
+    print(f"Loaded {len(history)} observations from Athena")
+    print(f"Unique stations: {history['station_id'].nunique()}")
+    print(f"Date range: {history['ts'].min()} to {history['ts'].max()}")
+
+    return history
