@@ -12,6 +12,12 @@ variable "enable_weekly_scheduler" {
   default = true
 }
 
+variable "auto_promote_model" {
+  description = "Put the new model in production when it beats the baseline and the current model"
+  type        = bool
+  default     = true
+}
+
 variable "retraining_lake_bucket" {
   description = "Lake bucket used by the ML Lambdas and Athena. Empty = the lake bucket of core"
   type        = string
@@ -175,13 +181,24 @@ resource "aws_iam_role_policy" "ml_evaluate" {
         Action = ["s3:GetObject"]
         Resource = [
           "arn:aws:s3:::${local.lake_bucket}/models/candidates/*",
-          "arn:aws:s3:::${local.lake_bucket}/models/production/metadata.json"
+          "arn:aws:s3:::${local.lake_bucket}/models/production/*"
         ]
       },
       {
+        # evaluation.json in the candidate; promotion: archive + new production model
+        Effect = "Allow"
+        Action = ["s3:PutObject"]
+        Resource = [
+          "arn:aws:s3:::${local.lake_bucket}/models/candidates/*",
+          "arn:aws:s3:::${local.lake_bucket}/models/production/*",
+          "arn:aws:s3:::${local.lake_bucket}/models/archive/*"
+        ]
+      },
+      {
+        # Email the admins the result of the weekly retraining
         Effect   = "Allow"
-        Action   = ["s3:PutObject"]
-        Resource = "arn:aws:s3:::${local.lake_bucket}/models/candidates/*"
+        Action   = ["sns:Publish"]
+        Resource = local.core.admin_alerts_topic_arn
       },
       {
         Effect = "Allow"
@@ -212,7 +229,9 @@ resource "aws_lambda_function" "ml_evaluate" {
 
   environment {
     variables = {
-      LAKE_BUCKET = local.lake_bucket
+      LAKE_BUCKET     = local.lake_bucket
+      ADMIN_TOPIC_ARN = local.core.admin_alerts_topic_arn
+      AUTO_PROMOTE    = tostring(var.auto_promote_model)
     }
   }
 
