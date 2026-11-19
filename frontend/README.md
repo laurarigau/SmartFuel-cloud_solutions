@@ -1,7 +1,8 @@
 # Frontend (Phase D)
 
 Static web app: map of Spain with the petrol stations, their current prices and (later) the prediction.
-It only talks to our HTTP API. Public: `GET /stations?geohash=`, `GET /stations/{id}`, `GET /predictions/{id}`.
+It only talks to our HTTP API. Public: `GET /stations?geohash=`, `GET /stations/{id}`, `GET /predictions/{id}`,
+`GET /cheapest?geohash=a,b&fuel=` (the "Más baratas en esta zona" ranking of the visible area).
 With log-in (Cognito): `GET/POST /subscriptions`, `DELETE /subscriptions/{station_fuel}` to follow stations and get price alerts.
 Admins (Cognito group `admins`): `GET /admin/status` and `GET /admin/quarantine` in the "Administración" panel.
 

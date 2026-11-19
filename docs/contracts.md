@@ -67,6 +67,7 @@ Until C delivers v0, B uses a stub that returns `{"direction": "flat", "prob": 1
 | `GET /stations?geohash=<5 chars>` | public | stations + latest prices in that cell |
 | `GET /stations/{id}` | public | station, prices, prediction |
 | `GET /predictions/{id}` | public | predictions for the station |
+| `GET /cheapest?geohash=<cells,...>&fuel=<fuel_type>` | public | cheapest stations of those cells (optional `bbox`, `limit`) |
 | `GET /subscriptions` · `POST /subscriptions` · `DELETE /subscriptions/{station_fuel}` | JWT | the user's followed stations |
 | `GET /admin/status` · `GET /admin/quarantine` | JWT + group `admins` (else 403) | pipeline status, quarantine list |
 
