@@ -13,13 +13,13 @@
       <span class="logo" aria-hidden="true">⛽</span>
       <div>
         <h1>SmartFuel Forecast</h1>
-        <p>Precios de carburantes en España y su previsión</p>
+        <p data-i18n="brand.subtitle">Precios de carburantes en España y su previsión</p>
       </div>
     </div>
     <div class="controls">
-      <label for="city">Ir a</label>
+      <label for="city" data-i18n="controls.goTo">Ir a</label>
       <select id="city">
-        <option value="">Elige una ciudad…</option>
+        <option value="" data-i18n="controls.pickCity">Elige una ciudad…</option>
         <option value="40.4168,-3.7038">Madrid</option>
         <option value="41.3874,2.1686">Barcelona</option>
         <option value="39.4699,-0.3763">Valencia</option>
@@ -28,23 +28,27 @@
         <option value="41.6488,-0.8891">Zaragoza</option>
         <option value="36.7213,-4.4214">Málaga</option>
       </select>
-      <button id="locate" type="button">Mi ubicación</button>
+      <button id="locate" type="button" data-i18n="controls.locate">Mi ubicación</button>
       <span id="user-email" class="user-email hidden"></span>
-      <button id="login" type="button" class="secondary hidden">Iniciar sesión</button>
-      <button id="logout" type="button" class="secondary hidden">Salir</button>
+      <button id="login" type="button" class="secondary hidden" data-i18n="controls.login">Iniciar sesión</button>
+      <button id="logout" type="button" class="secondary hidden" data-i18n="controls.logout">Salir</button>
+      <div class="lang-switch" role="group" data-i18n-aria="controls.language" aria-label="Idioma">
+        <button type="button" data-lang="es" aria-pressed="true">ES</button>
+        <button type="button" data-lang="en" aria-pressed="false">EN</button>
+      </div>
     </div>
   </header>
 
   <main class="layout">
-    <div id="map" aria-label="Mapa de gasolineras"></div>
+    <div id="map" aria-label="Mapa de gasolineras" data-i18n-aria="map.aria"></div>
 
     <aside class="panel" aria-live="polite">
-      <div id="status" class="status">Acerca el mapa a una zona para ver sus gasolineras.</div>
+      <div id="status" class="status" data-i18n="status.zoomIn">Acerca el mapa a una zona para ver sus gasolineras.</div>
 
       <section id="cheapest" class="cheapest hidden">
         <div class="cheapest-head">
-          <h3>Más baratas en esta zona</h3>
-          <select id="cheap-fuel" aria-label="Carburante"></select>
+          <h3 data-i18n="cheap.title">Más baratas en esta zona</h3>
+          <select id="cheap-fuel" aria-label="Carburante" data-i18n-aria="cheap.fuel"></select>
         </div>
         <ol id="cheap-list" class="cheap-list"></ol>
         <p id="cheap-note" class="muted cheap-note"></p>
@@ -52,44 +56,44 @@
 
       <section id="admin-panel" class="admin-panel hidden">
         <div class="admin-head">
-          <h3>Administración</h3>
-          <button id="admin-refresh" type="button" class="link">Actualizar</button>
+          <h3 data-i18n="admin.title">Administración</h3>
+          <button id="admin-refresh" type="button" class="link" data-i18n="admin.refresh">Actualizar</button>
         </div>
         <dl id="admin-status" class="admin-status"></dl>
-        <p class="admin-sub">Ficheros en cuarentena</p>
+        <p class="admin-sub" data-i18n="admin.quarantineTitle">Ficheros en cuarentena</p>
         <ul id="admin-quarantine" class="admin-quarantine"></ul>
       </section>
 
       <section id="my-stations" class="my-stations hidden">
-        <h3>Mis gasolineras</h3>
+        <h3 data-i18n="subs.title">Mis gasolineras</h3>
         <ul id="subs-list" class="subs-list"></ul>
       </section>
 
       <section id="detail" class="detail hidden">
-        <button id="close-detail" class="close" type="button" aria-label="Cerrar">×</button>
+        <button id="close-detail" class="close" type="button" aria-label="Cerrar" data-i18n-aria="panel.close">×</button>
         <p class="eyebrow" id="d-brand"></p>
         <h2 id="d-name"></h2>
         <p class="muted" id="d-address"></p>
         <p class="muted" id="d-hours"></p>
 
-        <h3>Precios actuales</h3>
+        <h3 data-i18n="detail.prices">Precios actuales</h3>
         <div id="d-prices" class="prices"></div>
 
-        <h3>Previsión</h3>
+        <h3 data-i18n="detail.prediction">Previsión</h3>
         <div id="d-prediction" class="muted">Disponible cuando el modelo esté en marcha.</div>
 
-        <h3>Avisarme cuando baje</h3>
+        <h3 data-i18n="follow.title">Avisarme cuando baje</h3>
         <div id="d-follow-login" class="muted hidden">
-          <button id="follow-login" type="button" class="link">Inicia sesión</button> para recibir un email cuando el precio baje de tu objetivo.
+          <button id="follow-login" type="button" class="link" data-i18n="follow.loginLink">Inicia sesión</button> <span data-i18n="follow.loginText">para recibir un email cuando el precio baje de tu objetivo.</span>
         </div>
         <form id="follow-form" class="follow-form hidden">
-          <label>Carburante
+          <label><span data-i18n="follow.fuel">Carburante</span>
             <select id="f-fuel"></select>
           </label>
-          <label>Precio objetivo (€/L)
+          <label><span data-i18n="follow.target">Precio objetivo (€/L)</span>
             <input id="f-target" type="number" step="0.001" min="0.5" max="5" placeholder="1.450" required>
           </label>
-          <button type="submit">Seguir</button>
+          <button type="submit" data-i18n="follow.submit">Seguir</button>
           <p id="f-message" class="muted" role="status"></p>
         </form>
       </section>
@@ -98,6 +102,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="config.js"></script>
+  <script src="i18n.js"></script>
   <script src="auth.js"></script>
   <script src="geohash.js"></script>
   <script src="app.js"></script>

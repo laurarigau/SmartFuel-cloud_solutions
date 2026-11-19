@@ -7,13 +7,8 @@ const API_URL = (window.SMARTFUEL_CONFIG || {}).API_URL;
 const MIN_ZOOM_FOR_STATIONS = 12; // below this, too many cells to load
 const MAX_CELLS = 30;
 
-const FUEL_LABELS = {
-  gasolina_95_e5: "Gasolina 95",
-  gasolina_98_e5: "Gasolina 98",
-  gasoleo_a: "Gasóleo A",
-  gasoleo_premium: "Gasóleo Premium",
-  glp: "GLP",
-};
+// Texts in Spanish and English: see i18n.js (t, fuelLabel, setLang)
+const FUELS = ["gasolina_95_e5", "gasolina_98_e5", "gasoleo_a", "gasoleo_premium", "glp"];
 
 const statusEl = document.getElementById("status");
 const detailEl = document.getElementById("detail");
@@ -30,8 +25,11 @@ const markers = L.layerGroup().addTo(map);
 const cellCache = new Map(); // geohash -> stations already downloaded
 const drawn = new Set();     // station ids already on the map
 
-function setStatus(text, isError = false) {
-  statusEl.textContent = text;
+// The status is kept as a text key so it can be translated when the language changes
+let lastStatus = { key: "status.zoomIn", vars: {}, isError: false };
+function setStatus(key, vars = {}, isError = false) {
+  lastStatus = { key, vars, isError };
+  statusEl.textContent = t(key, vars);
   statusEl.classList.toggle("error", isError);
 }
 
@@ -45,7 +43,7 @@ async function fetchJson(path) {
 // Private calls: send the Cognito token (API Gateway checks it)
 async function apiRequest(path, { method = "GET", body } = {}) {
   const token = await Auth.getToken();
-  if (!token) throw new Error("Tu sesión ha caducado: vuelve a iniciar sesión.");
+  if (!token) throw new Error(t("auth.expired"));
   const res = await fetch(API_URL + path, {
     method,
     headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
@@ -55,7 +53,7 @@ async function apiRequest(path, { method = "GET", body } = {}) {
   if (res.status === 401) {
     Auth.clear();
     updateAuthUI();
-    throw new Error("Tu sesión ha caducado: vuelve a iniciar sesión.");
+    throw new Error(t("auth.expired"));
   }
   if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
   return data;
@@ -80,30 +78,32 @@ function addMarker(station) {
     fillOpacity: 0.9,
   });
 
-  const popup = document.createElement("div");
-  const name = document.createElement("div");
-  name.className = "popup-name";
-  name.textContent = station.name || "Gasolinera";
-  const place = document.createElement("div");
-  place.textContent = station.municipality || "";
-  const link = document.createElement("button");
-  link.className = "popup-link";
-  link.type = "button";
-  link.textContent = "Ver precios";
-  link.addEventListener("click", () => showDetail(station.station_id));
-  popup.append(name, place, link);
-
-  marker.bindPopup(popup);
+  // Built when it opens, so it is always in the current language
+  marker.bindPopup(() => {
+    const popup = document.createElement("div");
+    const name = document.createElement("div");
+    name.className = "popup-name";
+    name.textContent = station.name || t("popup.station");
+    const place = document.createElement("div");
+    place.textContent = station.municipality || "";
+    const link = document.createElement("button");
+    link.className = "popup-link";
+    link.type = "button";
+    link.textContent = t("popup.prices");
+    link.addEventListener("click", () => showDetail(station.station_id));
+    popup.append(name, place, link);
+    return popup;
+  });
   marker.addTo(markers);
 }
 
 async function refreshStations() {
   if (!API_URL || API_URL.includes("xxxxxxxxxx")) {
-    setStatus("Falta configurar la URL de la API en frontend/config.js", true);
+    setStatus("status.noApi", {}, true);
     return;
   }
   if (map.getZoom() < MIN_ZOOM_FOR_STATIONS) {
-    setStatus("Acerca el mapa a una zona para ver sus gasolineras.");
+    setStatus("status.zoomIn");
     document.getElementById("cheapest").classList.add("hidden");
     return;
   }
@@ -111,22 +111,22 @@ async function refreshStations() {
   const b = map.getBounds();
   const cells = geohashCellsForBounds(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
   if (cells.length > MAX_CELLS) {
-    setStatus("Zona demasiado grande: acerca un poco más el mapa.");
+    setStatus("status.tooBig");
     document.getElementById("cheapest").classList.add("hidden");
     return;
   }
 
-  setStatus("Cargando gasolineras…");
+  setStatus("status.loading");
   try {
     const results = await Promise.all(cells.map(loadCell));
     const stations = results.flat();
     stations.forEach(addMarker);
     const visible = stations.filter(s => b.contains([s.lat, s.lon])).length;
-    setStatus(visible === 1 ? "1 gasolinera en esta zona." : `${visible} gasolineras en esta zona.`);
+    setStatus(visible === 1 ? "status.countOne" : "status.countMany", { n: visible });
     lastArea = { cells, bounds: b };
     loadCheapest();
   } catch (err) {
-    setStatus(`No se han podido cargar las gasolineras: ${err.message}`, true);
+    setStatus("status.loadError", { error: err.message }, true);
   }
 }
 
@@ -137,7 +137,7 @@ function renderPrices(prices) {
   if (entries.length === 0) {
     const p = document.createElement("p");
     p.className = "muted";
-    p.textContent = "Todavía no hay precios para esta estación (los cargará la fase de procesamiento).";
+    p.textContent = t("detail.noPrices");
     box.append(p);
     return;
   }
@@ -146,7 +146,7 @@ function renderPrices(prices) {
     card.className = "price";
     const label = document.createElement("div");
     label.className = "fuel";
-    label.textContent = FUEL_LABELS[fuel] || fuel;
+    label.textContent = fuelLabel(fuel);
     const value = document.createElement("div");
     value.className = "value";
     value.textContent = Number(p.price_eur).toFixed(3) + " ";
@@ -158,26 +158,24 @@ function renderPrices(prices) {
   }
 }
 
-const DIRECTION_LABELS = {
-  up: { text: "Subirá", cls: "up" },
-  down: { text: "Bajará", cls: "down" },
-  flat: { text: "Se mantendrá", cls: "flat" },
-};
+const DIRECTIONS = ["up", "down", "flat"]; // also the CSS classes (red, green, grey)
 
 function renderPredictions(predictions) {
   const box = document.getElementById("d-prediction");
   box.replaceChildren();
   const entries = Object.entries(predictions || {});
   if (entries.length === 0) {
-    box.textContent = "Todavía no hay previsión para esta estación (la calculará el modelo).";
+    box.textContent = t("detail.noPrediction");
     return;
   }
   for (const [fuel, p] of entries) {
     const row = document.createElement("div");
     row.className = "prediction";
     const label = document.createElement("span");
-    label.textContent = FUEL_LABELS[fuel] || fuel;
-    const dir = DIRECTION_LABELS[p.direction] || { text: p.direction, cls: "flat" };
+    label.textContent = fuelLabel(fuel);
+    const dir = DIRECTIONS.includes(p.direction)
+      ? { text: t(`direction.${p.direction}`), cls: p.direction }
+      : { text: p.direction, cls: "flat" };
     const value = document.createElement("span");
     value.className = `direction ${dir.cls}`;
     value.textContent = p.prob != null ? `${dir.text} (${Math.round(p.prob * 100)}%)` : dir.text;
@@ -190,19 +188,19 @@ async function showDetail(stationId) {
   currentStation = { id: stationId, prices: {} };
   setFollowMessage("");
   detailEl.classList.remove("hidden");
-  document.getElementById("d-name").textContent = "Cargando…";
-  document.getElementById("d-prediction").textContent = "Cargando…";
+  document.getElementById("d-name").textContent = t("detail.loading");
+  document.getElementById("d-prediction").textContent = t("detail.loading");
   try {
     const s = await fetchJson(`stations/${encodeURIComponent(stationId)}`);
-    document.getElementById("d-brand").textContent = s.province || "Gasolinera";
+    document.getElementById("d-brand").textContent = s.province || t("detail.station");
     document.getElementById("d-name").textContent = s.municipality ? `${s.name} · ${s.municipality}` : s.name;
     document.getElementById("d-address").textContent = [s.address, s.postal_code, s.province].filter(Boolean).join(", ");
-    document.getElementById("d-hours").textContent = s.opening_hours ? `Horario: ${s.opening_hours}` : "";
+    document.getElementById("d-hours").textContent = s.opening_hours ? t("detail.hours", { hours: s.opening_hours }) : "";
     renderPrices(s.prices);
     currentStation.prices = s.prices || {};
     prefillTarget();
   } catch (err) {
-    document.getElementById("d-name").textContent = "No se ha podido cargar la estación";
+    document.getElementById("d-name").textContent = t("detail.loadError");
     document.getElementById("d-address").textContent = err.message;
     return;
   }
@@ -210,7 +208,7 @@ async function showDetail(stationId) {
     const pred = await fetchJson(`predictions/${encodeURIComponent(stationId)}`);
     renderPredictions(pred.predictions);
   } catch (err) {
-    document.getElementById("d-prediction").textContent = "No se ha podido cargar la previsión.";
+    document.getElementById("d-prediction").textContent = t("detail.predictionError");
   }
 }
 
@@ -219,18 +217,13 @@ async function showDetail(stationId) {
 // ---------------------------------------------------------------------------
 let lastArea = null; // { cells, bounds } of the last area loaded on the map
 const cheapFuel = document.getElementById("cheap-fuel");
-for (const [value, label] of Object.entries(FUEL_LABELS)) {
-  cheapFuel.append(new Option(label, value));
-}
 
 function renderCheapest(data) {
   const list = document.getElementById("cheap-list");
   const note = document.getElementById("cheap-note");
   list.replaceChildren();
   if (data.cheapest.length === 0) {
-    note.textContent = data.stations_in_area
-      ? "Todavía no hay precios de este carburante en la zona."
-      : "No hay gasolineras en esta zona.";
+    note.textContent = data.stations_in_area ? t("cheap.noPrices") : t("cheap.noStations");
     return;
   }
   for (const st of data.cheapest) {
@@ -251,7 +244,7 @@ function renderCheapest(data) {
     li.append(btn);
     list.append(li);
   }
-  note.textContent = `${data.with_price} de ${data.stations_in_area} gasolineras con precio de ${FUEL_LABELS[data.fuel]}.`;
+  note.textContent = t("cheap.note", { n: data.with_price, total: data.stations_in_area, fuel: fuelLabel(data.fuel) });
 }
 
 async function loadCheapest() {
@@ -279,9 +272,15 @@ cheapFuel.addEventListener("change", loadCheapest);
 // ---------------------------------------------------------------------------
 let currentStation = null; // { id, prices } of the station open in the panel
 const fuelSelect = document.getElementById("f-fuel");
-for (const [value, label] of Object.entries(FUEL_LABELS)) {
-  fuelSelect.append(new Option(label, value));
+
+// Fill (or re-translate) the fuel options of a select, keeping the chosen one
+function fillFuelSelect(select) {
+  const chosen = select.value || FUELS[0];
+  select.replaceChildren(...FUELS.map((f) => new Option(fuelLabel(f), f)));
+  select.value = chosen;
 }
+fillFuelSelect(cheapFuel);
+fillFuelSelect(fuelSelect);
 
 function setFollowMessage(text, cls = "") {
   const el = document.getElementById("f-message");
@@ -318,7 +317,7 @@ function updateAuthUI() {
 // Admin panel (group "admins"): pipeline status and quarantined files
 // ---------------------------------------------------------------------------
 function formatDate(iso) {
-  return iso ? new Date(iso).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : "—";
+  return iso ? new Date(iso).toLocaleString(locale(), { dateStyle: "short", timeStyle: "short" }) : "—";
 }
 
 function renderAdmin(status, quarantine) {
@@ -334,20 +333,20 @@ function renderAdmin(status, quarantine) {
   };
   const raw = status.raw || {};
   const clean = status.clean || {};
-  row("Ingesta", status.ingestion_ok ? "OK" : "Revisar", status.ingestion_ok ? "ok" : "bad");
-  row("Última descarga", raw.latest
-    ? `${formatDate(raw.latest.at)} (hace ${status.hours_since_last_ingestion} h)`
-    : "Ninguna");
-  row("Ficheros raw", raw.files ? `${raw.files} (${raw.size_mb} MB)` : "0");
-  row("Procesamiento", status.processing_ok ? "OK" : "Sin datos procesados", status.processing_ok ? "ok" : "bad");
-  row("Último procesado", clean.latest ? formatDate(clean.latest.at) : "—");
-  row("En cuarentena", String((status.quarantine || {}).files || 0), (status.quarantine || {}).files ? "bad" : "");
+  row(t("admin.ingestion"), status.ingestion_ok ? "OK" : t("admin.check"), status.ingestion_ok ? "ok" : "bad");
+  row(t("admin.lastDownload"), raw.latest
+    ? t("admin.hoursAgo", { date: formatDate(raw.latest.at), hours: status.hours_since_last_ingestion })
+    : t("admin.none"));
+  row(t("admin.rawFiles"), raw.files ? `${raw.files} (${raw.size_mb} MB)` : "0");
+  row(t("admin.processing"), status.processing_ok ? "OK" : t("admin.noProcessed"), status.processing_ok ? "ok" : "bad");
+  row(t("admin.lastProcessed"), clean.latest ? formatDate(clean.latest.at) : "—");
+  row(t("admin.inQuarantine"), String((status.quarantine || {}).files || 0), (status.quarantine || {}).files ? "bad" : "");
 
   const list = document.getElementById("admin-quarantine");
   list.replaceChildren();
   if (quarantine.files.length === 0) {
     const li = document.createElement("li");
-    li.textContent = "Ninguno: todos los ficheros han pasado la validación.";
+    li.textContent = t("admin.noQuarantine");
     list.append(li);
   }
   for (const f of quarantine.files) {
@@ -364,7 +363,7 @@ async function loadAdmin() {
     const [status, quarantine] = await Promise.all([apiRequest("admin/status"), apiRequest("admin/quarantine")]);
     renderAdmin(status, quarantine);
   } catch (err) {
-    setStatus(`Panel de administración: ${err.message}`, true);
+    setStatus("status.adminError", { error: err.message }, true);
   }
 }
 
@@ -376,7 +375,7 @@ function renderSubscriptions(subs) {
   if (subs.length === 0) {
     const li = document.createElement("li");
     li.className = "muted";
-    li.textContent = "Todavía no sigues ninguna gasolinera. Abre una en el mapa y pulsa «Seguir».";
+    li.textContent = t("subs.empty");
     list.append(li);
     return;
   }
@@ -391,13 +390,13 @@ function renderSubscriptions(subs) {
     name.addEventListener("click", () => showDetail(sub.station_id));
     const target = document.createElement("div");
     target.className = "sub-target";
-    target.textContent = `${FUEL_LABELS[sub.fuel_type] || sub.fuel_type}: aviso por debajo de ${Number(sub.target_price).toFixed(3)} €/L`;
+    target.textContent = t("subs.target", { fuel: fuelLabel(sub.fuel_type), price: Number(sub.target_price).toFixed(3) });
     info.append(name, target);
 
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "remove";
-    remove.textContent = "Quitar";
+    remove.textContent = t("subs.remove");
     remove.addEventListener("click", async () => {
       remove.disabled = true;
       try {
@@ -405,7 +404,7 @@ function renderSubscriptions(subs) {
         await loadSubscriptions();
       } catch (err) {
         remove.disabled = false;
-        setStatus(`No se ha podido quitar: ${err.message}`, true);
+        setStatus("status.removeError", { error: err.message }, true);
       }
     });
     li.append(info, remove);
@@ -419,7 +418,7 @@ async function loadSubscriptions() {
     const data = await apiRequest("subscriptions");
     renderSubscriptions(data.subscriptions);
   } catch (err) {
-    setStatus(`No se han podido cargar tus gasolineras: ${err.message}`, true);
+    setStatus("status.subsError", { error: err.message }, true);
   }
 }
 
@@ -428,7 +427,7 @@ document.getElementById("follow-form").addEventListener("submit", async (e) => {
   if (!currentStation) return;
   const button = e.target.querySelector("button[type=submit]");
   button.disabled = true;
-  setFollowMessage("Guardando…");
+  setFollowMessage(t("follow.saving"));
   try {
     const sub = await apiRequest("subscriptions", {
       method: "POST",
@@ -438,7 +437,7 @@ document.getElementById("follow-form").addEventListener("submit", async (e) => {
         target_price: Number(document.getElementById("f-target").value),
       },
     });
-    setFollowMessage(`Hecho: te avisaremos cuando ${FUEL_LABELS[sub.fuel_type]} baje de ${Number(sub.target_price).toFixed(3)} €/L.`, "ok");
+    setFollowMessage(t("follow.done", { fuel: fuelLabel(sub.fuel_type), price: Number(sub.target_price).toFixed(3) }), "ok");
     await loadSubscriptions();
   } catch (err) {
     setFollowMessage(err.message, "error");
@@ -460,10 +459,10 @@ document.getElementById("city").addEventListener("change", (e) => {
 });
 
 document.getElementById("locate").addEventListener("click", () => {
-  if (!navigator.geolocation) return setStatus("Tu navegador no permite la ubicación.", true);
+  if (!navigator.geolocation) return setStatus("status.noGeo", {}, true);
   navigator.geolocation.getCurrentPosition(
     (pos) => map.setView([pos.coords.latitude, pos.coords.longitude], 14),
-    () => setStatus("No se ha podido obtener tu ubicación. Elige una ciudad.", true)
+    () => setStatus("status.geoError", {}, true)
   );
 });
 
@@ -473,11 +472,31 @@ map.on("moveend", () => {
   timer = setTimeout(refreshStations, 300); // wait until the user stops moving
 });
 
+// ---------------------------------------------------------------------------
+// Language switch (ES / EN): re-translate everything that is on screen
+// ---------------------------------------------------------------------------
+document.querySelectorAll("[data-lang]").forEach((btn) => {
+  btn.addEventListener("click", () => setLang(btn.dataset.lang));
+});
+
+document.addEventListener("smartfuel:lang", () => {
+  map.closePopup();
+  setStatus(lastStatus.key, lastStatus.vars, lastStatus.isError);
+  fillFuelSelect(cheapFuel);
+  fillFuelSelect(fuelSelect);
+  setFollowMessage("");
+  loadCheapest();
+  loadSubscriptions();
+  loadAdmin();
+  if (currentStation && !detailEl.classList.contains("hidden")) showDetail(currentStation.id);
+});
+
 async function start() {
+  applyStaticTexts();
   try {
     await Auth.handleRedirect(); // finishes the log-in when Cognito sends us back
   } catch (err) {
-    setStatus(`No se ha podido iniciar sesión: ${err.message}`, true);
+    setStatus("status.loginError", { error: err.message }, true);
   }
   updateAuthUI();
   loadSubscriptions();

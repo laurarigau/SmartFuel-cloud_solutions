@@ -215,3 +215,18 @@ body {
 .cheap-list .cheap-price { font-variant-numeric: tabular-nums; font-weight: 600; }
 .cheap-list li:first-child .cheap-price { color: var(--down); }
 .cheap-note { margin: 6px 0 0; font-size: 13px; }
+
+/* Language switch (ES / EN) */
+.lang-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.controls .lang-switch button {
+  background: #fff;
+  color: var(--muted);
+  border: none;
+  border-radius: 0;
+  padding: 8px 10px;
+  min-height: 40px;
+  font-weight: 600;
+}
+.controls .lang-switch button[aria-pressed="true"] { background: var(--brand); color: #fff; }
+.controls .lang-switch button:hover { background: var(--bg); }
+.controls .lang-switch button[aria-pressed="true"]:hover { background: var(--brand-dark); }
