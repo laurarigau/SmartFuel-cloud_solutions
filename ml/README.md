@@ -317,6 +317,8 @@ So the normal script keeps everything running:
 
 Set a variable to `false` (for example `TF_VAR_enable_weekly_scheduler=false`) only to switch that part off.
 
+`auto_promote_model` (default `true`): when the weekly candidate beats the baseline and the production model, the evaluate Lambda archives the current model in `models/archive/<time>/`, copies the candidate to `models/production/` and emails the admins (SNS `admin-alerts`). If it is not better, production does not change and the admins get the reasons.
+
 Always review `terraform plan` before applying changes.
 
 The Terraform state bucket and the application resources are both in `eu-north-1` (the only region allowed in the shared account).

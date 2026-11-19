@@ -1,5 +1,18 @@
 
-"""Phase C — Evaluate a new ML model candidate."""
+"""Phase C — Evaluate a new ML model candidate and promote it if it is better.
+
+Draft: "If the new model is better than the current one, it is put into
+production. If not, the old model stays and the admins are notified."
+
+    better than the baseline AND than the production model
+        -> copy the current production model to models/archive/<time>/
+        -> copy the candidate (model.joblib + metadata.json) to models/production/
+        -> email the admins (SNS) that a new model is live
+    otherwise
+        -> production does not change, admins get the reasons by email
+
+Env: LAKE_BUCKET, ADMIN_TOPIC_ARN (optional), AUTO_PROMOTE ("true" by default)
+"""
 
 import json
 import os
@@ -42,16 +55,70 @@ def evaluate(candidate, production=None):
             reasons.append("below_production")
 
     return {
-        "status": (
-            "eligible_for_manual_review"
-            if not reasons else "not_eligible"
-        ),
+        "status": "eligible" if not reasons else "not_eligible",
         "candidate_macro_f1": candidate_f1,
         "baseline_macro_f1": baseline_f1,
         "production_macro_f1": production_f1,
         "reasons": reasons,
         "production_promoted": False
     }
+
+
+MODEL_FILES = ["model.joblib", "metadata.json"]
+PRODUCTION_PREFIX = "models/production/"
+
+
+def promote(s3, bucket, candidate_prefix, has_production, now):
+    """Archive the current production model, then copy the candidate over it."""
+    archived_to = None
+    if has_production:
+        archived_to = f"models/archive/{now:%Y%m%dT%H%M%SZ}/"
+        for name in MODEL_FILES:
+            s3.copy_object(
+                Bucket=bucket,
+                Key=archived_to + name,
+                CopySource={"Bucket": bucket, "Key": PRODUCTION_PREFIX + name},
+            )
+    # metadata.json last, so predict never sees new metadata with the old model
+    for name in MODEL_FILES:
+        s3.copy_object(
+            Bucket=bucket,
+            Key=PRODUCTION_PREFIX + name,
+            CopySource={"Bucket": bucket, "Key": candidate_prefix + name},
+        )
+    return archived_to
+
+
+def notify_admins(result):
+    topic = os.environ.get("ADMIN_TOPIC_ARN")
+    if not topic:
+        return False
+
+    if result["production_promoted"]:
+        subject = "SmartFuel: new ML model in production"
+        body = (
+            "The weekly retraining produced a better model and it is now in production.\n\n"
+            f"Candidate: {result['candidate_prefix']}\n"
+            f"Macro F1 candidate: {result['candidate_macro_f1']}\n"
+            f"Macro F1 baseline: {result['baseline_macro_f1']}\n"
+            f"Macro F1 previous model: {result['production_macro_f1']}\n"
+            f"Previous model archived in: {result.get('archived_to') or '-'}\n"
+        )
+    else:
+        subject = "SmartFuel: new ML model not promoted"
+        body = (
+            "The weekly retraining finished, but the new model is not better, "
+            "so the current model stays in production.\n\n"
+            f"Candidate: {result['candidate_prefix']}\n"
+            f"Reasons: {', '.join(result['reasons']) or '-'}\n"
+            f"Macro F1 candidate: {result['candidate_macro_f1']}\n"
+            f"Macro F1 baseline: {result['baseline_macro_f1']}\n"
+            f"Macro F1 current model: {result['production_macro_f1']}\n"
+        )
+
+    import boto3
+    boto3.client("sns").publish(TopicArn=topic, Subject=subject, Message=body)
+    return True
 
 
 def lambda_handler(event, context):
@@ -93,10 +160,14 @@ def lambda_handler(event, context):
 
     result = evaluate(candidate, production)
 
-    result["evaluated_at"] = (
-        datetime.now(timezone.utc).isoformat()
-    )
+    now = datetime.now(timezone.utc)
+    result["evaluated_at"] = now.isoformat()
     result["candidate_prefix"] = prefix
+
+    auto_promote = os.environ.get("AUTO_PROMOTE", "true").lower() == "true"
+    if result["status"] == "eligible" and auto_promote:
+        result["archived_to"] = promote(s3, bucket, prefix, production is not None, now)
+        result["production_promoted"] = True
 
     s3.put_object(
         Bucket=bucket,
@@ -105,6 +176,12 @@ def lambda_handler(event, context):
         ContentType="application/json"
     )
 
-    print("Evaluation status:", result["status"])
+    result["admins_notified"] = notify_admins(result)
+
+    print(
+        "Evaluation status:", result["status"],
+        "| promoted:", result["production_promoted"],
+        "| admins notified:", result["admins_notified"],
+    )
 
     return result

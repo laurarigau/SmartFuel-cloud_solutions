@@ -32,7 +32,8 @@ Ministry API ──(EventBridge Scheduler, 4×/day)──► Lambda ingest ─�
 Browser ──► Amplify (static web, ES/EN) ──► API Gateway HTTP API (+ Cognito JWT) ──► Lambda api ──► DynamoDB
 
 Weekly: EventBridge Scheduler ──► Step Functions smartfuel-ml-retraining: Train (Athena over clean/) → Evaluate
-          candidate in models/candidates/<date>/ with evaluation.json (vs baseline and current model) → manual promotion to models/production/
+          better than the baseline and the current model → models/production/ (old one archived) + email to admins
+          not better → the current model stays + email to admins with the reasons
 
 Monitoring: CloudWatch logs + alarms (Lambda errors, failed workflows, stopped ingestion, DLQ, API 5xx) ──► SNS smartfuel-alarms ──► team email
             CloudWatch dashboard "smartfuel" with the health of the whole pipeline
@@ -129,7 +130,7 @@ The whole pipeline runs on its own in the shared account: ingestion 4 times a da
 |---|---|---|---|
 | A · Ingestion | Laura | Scheduler 4×/day → Lambda → S3 `raw/` | — |
 | B · Processing | Carla | Step Functions with retries, catch, SNS and DLQ; Parquet in `clean/`; prices in DynamoDB; history backfilled; predict uses the Phase C model | — |
-| C · Model & alerts | Marta | Model vs baseline in `models/production/`, used by predict; price alerts check-alerts → SNS → send-email → SES; weekly retraining with Step Functions + Athena (Glue table) | Automatic model promotion, SES production access (see *Limitations*) |
+| C · Model & alerts | Marta | Model vs baseline in `models/production/`, used by predict; price alerts check-alerts → SNS → send-email → SES; weekly retraining with Step Functions + Athena (Glue table), automatic promotion of a better model and email to admins | SES production access (see *Limitations*) |
 | D · Web, API & auth | Marc | Map, prices, prediction, cheapest stations in the area, Cognito log-in, subscriptions, admin routes, browser caching, Spanish/English, Amplify | — |
 | Shared | — | IAM least privilege, encryption at rest and in transit, CloudWatch logs, alarms (Lambda errors, failed workflows, stopped ingestion, DLQ, API 5xx) and dashboard, admin emails subscribed to SNS | Budget alert (see *Limitations*) |
 
@@ -138,7 +139,6 @@ The whole pipeline runs on its own in the shared account: ingestion 4 times a da
 | Limitation | Why | Next step |
 |---|---|---|
 | No budget alert | The AWS Free plan cannot charge us: when the credits run out, AWS closes the account | AWS Budgets alert in Terraform for a paid account |
-| Model promotion is manual | Every week a candidate model is trained and evaluated against the baseline and the current model; a human reviews it before it replaces production | Promote it automatically when it beats both, and notify admins via SNS when it does not |
 | Price alerts only reach verified emails | Amazon SES starts in sandbox mode in new accounts (`aws ses verify-email-identity --email-address <email>`) | Request SES production access and send from our own domain |
 | Shared account limits | Only eu-north-1 is allowed and Lambdas have 512 MB at most; the ESADE sandbox lacked permissions for Cognito, Amplify, Step Functions, SNS and SES | Same Terraform in a production account, without changing the architecture |
 | No server-side API cache | HTTP APIs have no cache; a REST API cache costs ~14 $/month | Browser caching (`Cache-Control`) is in place; add a REST API or CloudFront cache if traffic grows |
