@@ -5,7 +5,7 @@ import io
 import boto3
 import pandas as pd
 
-import handler as predict
+import handler as predict  # type: ignore[import-not-found]
 
 
 def lambda_handler(event, context):
