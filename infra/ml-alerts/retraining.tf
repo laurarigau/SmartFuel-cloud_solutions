@@ -1,6 +1,6 @@
 
 # Phase C — Weekly ML retraining
-# Step Functions and email delivery remain disabled.
+# Weekly retraining: Scheduler -> Step Functions -> Train -> Evaluate.
 
 variable "enable_ml_retraining" {
   type    = bool
@@ -82,10 +82,11 @@ resource "aws_cloudwatch_log_group" "ml_evaluate" {
 }
 
 # Train permissions
+
 resource "aws_iam_role_policy" "ml_train" {
   count = var.enable_ml_retraining ? 1 : 0
-  role  = aws_iam_role.ml_train[0].id
   name  = "${var.project}-train-policy"
+  role  = aws_iam_role.ml_train[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -96,14 +97,30 @@ resource "aws_iam_role_policy" "ml_train" {
         Resource = "arn:aws:s3:::${var.retraining_lake_bucket}"
         Condition = {
           StringLike = {
-            "s3:prefix" = ["raw/*"]
+            "s3:prefix" = [
+              "clean/", "clean/*",
+              "athena-results/ml/", "athena-results/ml/*"
+            ]
           }
         }
       },
       {
         Effect   = "Allow"
-        Action   = ["s3:GetObject"]
-        Resource = "arn:aws:s3:::${var.retraining_lake_bucket}/raw/*"
+        Action   = ["s3:GetBucketLocation"]
+        Resource = "arn:aws:s3:::${var.retraining_lake_bucket}"
+      },
+      {
+        Effect = "Allow"
+        Action = ["s3:GetObject"]
+        Resource = [
+          "arn:aws:s3:::${var.retraining_lake_bucket}/clean/*",
+          "arn:aws:s3:::${var.retraining_lake_bucket}/athena-results/ml/*"
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:AbortMultipartUpload"]
+        Resource = "arn:aws:s3:::${var.retraining_lake_bucket}/athena-results/ml/*"
       },
       {
         Effect   = "Allow"
@@ -111,16 +128,26 @@ resource "aws_iam_role_policy" "ml_train" {
         Resource = "arn:aws:s3:::${var.retraining_lake_bucket}/models/candidates/*"
       },
       {
-        Effect   = "Allow"
-        Action   = ["lambda:InvokeFunction"]
-        Resource = aws_lambda_function.ml_evaluate[0].arn
+        Effect = "Allow"
+        Action = [
+          "athena:StartQueryExecution",
+          "athena:GetQueryExecution",
+          "athena:GetWorkGroup"
+        ]
+        Resource = aws_athena_workgroup.ml.arn
       },
       {
         Effect = "Allow"
-        Action = [
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
+        Action = ["glue:GetDatabase", "glue:GetTable", "glue:GetPartitions"]
+        Resource = [
+          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:catalog",
+          aws_glue_catalog_database.ml.arn,
+          aws_glue_catalog_table.clean_prices.arn
         ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
         Resource = "${aws_cloudwatch_log_group.ml_train[0].arn}:*"
       }
     ]
@@ -200,11 +227,11 @@ resource "aws_lambda_function" "ml_train" {
   function_name = "${var.project}-train"
 
   package_type  = "Image"
-  image_uri     = "${aws_ecr_repository.ml_train.repository_url}:v1"
+  image_uri     = "${aws_ecr_repository.ml_train.repository_url}:v2"
   architectures = ["arm64"]
 
   role        = aws_iam_role.ml_train[0].arn
-  memory_size = 2048
+  memory_size = 512
   timeout     = 900
 
   ephemeral_storage {
@@ -213,10 +240,15 @@ resource "aws_lambda_function" "ml_train" {
 
   environment {
     variables = {
-      LAKE_BUCKET            = var.retraining_lake_bucket
-      RAW_PREFIX             = "raw/"
-      MODEL_OUTPUT_DIR       = "/tmp/smartfuel-model"
-      EVALUATE_FUNCTION_NAME = aws_lambda_function.ml_evaluate[0].function_name
+      LAKE_BUCKET                   = var.retraining_lake_bucket
+      MODEL_OUTPUT_DIR              = "/tmp/smartfuel-model"
+      TRAINING_SOURCE               = "athena"
+      ATHENA_DATABASE               = aws_glue_catalog_database.ml.name
+      ATHENA_TABLE                  = aws_glue_catalog_table.clean_prices.name
+      ATHENA_WORKGROUP              = aws_athena_workgroup.ml.name
+      ATHENA_LOOKBACK_DAYS          = "8"
+      ATHENA_STATION_SAMPLE_MODULUS = "10"
+      RF_N_JOBS                     = "1"
     }
   }
 
@@ -253,8 +285,8 @@ resource "aws_iam_role_policy" "ml_scheduler" {
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["lambda:InvokeFunction"]
-      Resource = aws_lambda_function.ml_train[0].arn
+      Action   = ["states:StartExecution"]
+      Resource = aws_sfn_state_machine.ml_retraining[0].arn
     }]
   })
 }
@@ -275,7 +307,7 @@ resource "aws_scheduler_schedule" "ml_weekly" {
   }
 
   target {
-    arn      = aws_lambda_function.ml_train[0].arn
+    arn      = aws_sfn_state_machine.ml_retraining[0].arn
     role_arn = aws_iam_role.ml_scheduler[0].arn
     input    = "{}"
   }

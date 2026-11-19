@@ -27,9 +27,12 @@ locals {
   }]
 
   invoke = { for k, f in aws_lambda_function.lambda : k => {
-    Type       = "Task"
-    Resource   = "arn:aws:states:::lambda:invoke"
-    Parameters = { FunctionName = f.arn, "Payload.$" = "$" }
+    Type     = "Task"
+    Resource = "arn:aws:states:::lambda:invoke"
+    Parameters = {
+      FunctionName = k == "predict" && var.predict_lambda_arn != "" ? var.predict_lambda_arn : f.arn
+      "Payload.$"  = "$"
+    }
     OutputPath = "$.Payload"
     Retry      = local.task_retry
   } }
@@ -108,9 +111,17 @@ resource "aws_iam_role" "sfn" {
 
 data "aws_iam_policy_document" "sfn" {
   statement {
-    sid       = "InvokeSteps"
-    actions   = ["lambda:InvokeFunction"]
-    resources = flatten([for f in aws_lambda_function.lambda : [f.arn, "${f.arn}:*"]])
+    sid     = "InvokeSteps"
+    actions = ["lambda:InvokeFunction"]
+    resources = concat(
+      flatten([
+        for f in aws_lambda_function.lambda : [f.arn, "${f.arn}:*"]
+      ]),
+      var.predict_lambda_arn == "" ? [] : [
+        var.predict_lambda_arn,
+        "${var.predict_lambda_arn}:*"
+      ]
+    )
   }
   dynamic "statement" {
     for_each = local.admin_topic == null ? [] : [local.admin_topic]

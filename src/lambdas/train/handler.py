@@ -13,11 +13,35 @@ def lambda_handler(event, context):
     # AWS Lambda can write temporary files in /tmp.
     os.environ["MODEL_OUTPUT_DIR"] = "/tmp/smartfuel-model"
 
-    result = train_model(
-        s3_bucket=bucket,
-        s3_prefix="raw/",
-        upload_s3_bucket=bucket
-    )
+    source = os.environ.get("TRAINING_SOURCE", "s3")
+
+    if source == "athena":
+        result = train_model(
+            athena_database=os.environ.get(
+                "ATHENA_DATABASE", "smartfuel_ml"
+            ),
+            athena_table=os.environ.get(
+                "ATHENA_TABLE", "clean_prices"
+            ),
+            athena_workgroup=os.environ.get(
+                "ATHENA_WORKGROUP", "smartfuel-ml"
+            ),
+            athena_lookback_days=int(
+                os.environ.get("ATHENA_LOOKBACK_DAYS", "14")
+            ),
+            athena_station_sample_modulus=int(
+                os.environ.get("ATHENA_STATION_SAMPLE_MODULUS", "1")
+            ),
+            upload_s3_bucket=bucket,
+        )
+    elif source == "s3":
+        result = train_model(
+            s3_bucket=bucket,
+            s3_prefix="raw/",
+            upload_s3_bucket=bucket,
+        )
+    else:
+        raise ValueError(f"Unsupported training source: {source}")
 
     if not isinstance(result, dict):
         raise RuntimeError(
@@ -26,8 +50,8 @@ def lambda_handler(event, context):
 
     candidate_prefix = result["candidate_prefix"]
 
-    # Step Functions is blocked in the sandbox.
-    # Invoke evaluation directly if configured.
+    # Step Functions performs evaluation in the shared account.
+    # Legacy direct invocation remains optional.
     evaluator = os.environ.get("EVALUATE_FUNCTION_NAME")
 
     if evaluator:

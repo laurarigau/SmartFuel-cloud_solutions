@@ -145,6 +145,10 @@ resource "aws_lambda_function" "check_alerts" {
 
   environment {
     variables = {
+      SNS_TOPIC_ARN         = aws_sns_topic.price_alerts.arn
+      ALERT_PUBLISH_ENABLED = tostring(var.enable_alert_publish)
+      LARGE_DROP_EUR        = "0.05"
+
       SUBSCRIPTIONS_TABLE = local.core.tables.subscriptions
     }
   }

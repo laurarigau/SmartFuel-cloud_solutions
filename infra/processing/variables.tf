@@ -24,3 +24,9 @@ variable "min_stations" {
   type        = number
   default     = 10000
 }
+
+variable "predict_lambda_arn" {
+  description = "Optional Phase C ML Lambda ARN. Empty keeps the original predict Lambda."
+  type        = string
+  default     = ""
+}

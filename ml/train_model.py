@@ -18,7 +18,11 @@ from sklearn.metrics import (
     f1_score,
 )
 
-from history_loader import load_history, load_history_from_s3
+from history_loader import (
+    load_history,
+    load_history_from_s3,
+    load_history_from_athena,
+)
 
 
 FEATURES = [
@@ -29,14 +33,36 @@ FEATURES = [
     "price_vs_province",
 ]
 
-def train_model(input_folder=None, s3_bucket=None, s3_prefix="raw/", upload_s3_bucket=None):
-    # 1. Load historical data
-    if s3_bucket:
+def train_model(
+    input_folder=None,
+    s3_bucket=None,
+    s3_prefix="raw/",
+    upload_s3_bucket=None,
+    athena_database=None,
+    athena_table="clean_prices",
+    athena_workgroup="smartfuel-ml",
+    athena_lookback_days=14,
+    athena_station_sample_modulus=1,
+):
+    if athena_database:
+        print("Loading historical data from Athena...")
+
+        history = load_history_from_athena(
+            database=athena_database,
+            table=athena_table,
+            workgroup=athena_workgroup,
+            lookback_days=athena_lookback_days,
+            station_sample_modulus=athena_station_sample_modulus,
+        )
+
+    elif s3_bucket:
         print("Loading historical data from AWS S3...")
+
         history = load_history_from_s3(
             bucket=s3_bucket,
-            prefix=s3_prefix
+            prefix=s3_prefix,
         )
+
     else:
         print("Loading historical data locally...")
         history = load_history(input_folder)
@@ -129,7 +155,7 @@ def train_model(input_folder=None, s3_bucket=None, s3_prefix="raw/", upload_s3_b
         min_samples_leaf=30,
         class_weight="balanced_subsample",
         random_state=42,
-        n_jobs=-1
+        n_jobs=int(os.environ.get("RF_N_JOBS", "-1"))
     )
 
     model.fit(X_train, y_train)
@@ -243,14 +269,30 @@ if __name__ == "__main__":
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--input")
     source.add_argument("--s3-bucket")
+    source.add_argument("--athena-database")
 
     parser.add_argument("--s3-prefix", default="raw/")
     parser.add_argument("--upload-s3-bucket")
+
+    parser.add_argument("--athena-table", default="clean_prices")
+    parser.add_argument("--athena-workgroup", default="smartfuel-ml")
+    parser.add_argument("--athena-lookback-days", type=int, default=14)
+    parser.add_argument(
+        "--athena-station-sample-modulus",
+        type=int,
+        default=1,
+    )
+
     args = parser.parse_args()
 
     train_model(
-    input_folder=args.input,
-    s3_bucket=args.s3_bucket,
-    s3_prefix=args.s3_prefix,
-    upload_s3_bucket=args.upload_s3_bucket
-)
+        input_folder=args.input,
+        s3_bucket=args.s3_bucket,
+        s3_prefix=args.s3_prefix,
+        upload_s3_bucket=args.upload_s3_bucket,
+        athena_database=args.athena_database,
+        athena_table=args.athena_table,
+        athena_workgroup=args.athena_workgroup,
+        athena_lookback_days=args.athena_lookback_days,
+        athena_station_sample_modulus=args.athena_station_sample_modulus,
+    )
