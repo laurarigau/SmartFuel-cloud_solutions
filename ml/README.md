@@ -3,7 +3,7 @@
 **Owner:** Marta Palet  
 **Project:** SmartFuel Forecast  
 **AWS Region:** `eu-north-1`  
-**Status:** Implemented and tested in the Phase C AWS Sandbox
+**Status:** Deployed and running in the team's shared AWS account
 
 ## 1. Overview
 
@@ -15,11 +15,13 @@ The implementation includes:
 - Historical data loading from local files or AWS S3.
 - Reproducible model training and evaluation.
 - AWS Lambda functions for training and evaluating models.
-- Weekly retraining using EventBridge Scheduler.
-- Price-drop detection using DynamoDB Streams and a Lambda function.
+- Prediction with the production model inside the Phase B workflow (`smartfuel-predict-ml`).
+- Weekly retraining: EventBridge Scheduler starts a Step Functions workflow (train → evaluate) that reads `clean/` with Athena.
+- Automatic promotion of a candidate only when it beats the baseline and the production model.
+- Price alerts: DynamoDB Streams → `check-alerts` → SNS → `send-email` → SES.
 - Model versioning and evaluation results stored in S3.
 
-**Important:** Step Functions and email delivery remain unavailable due to the ESADE AWS Sandbox restrictions.
+The first version was built in the ESADE AWS Sandbox, where Step Functions, SNS and SES were not available. The project then moved to a shared AWS account (`eu-north-1`), where the full design is deployed. This document describes the deployed version; the Sandbox tests are kept in section 9 as history.
 
 ## 2. Implementation Status
 
@@ -28,14 +30,15 @@ The implementation includes:
 | ML v0 notebook | Completed | Data exploration, baseline, Random Forest training and evaluation |
 | Historical data loader | Completed | Loads historical JSON snapshots locally or from S3 |
 | Training script | Completed | Trains, evaluates and exports candidate models |
-| Lambda `smartfuel-train` | Deployed & tested | Trains a model and uploads its artifacts to S3 |
-| Lambda `smartfuel-evaluate` | Deployed & tested | Compares candidate metrics against the baseline and production model, when available |
-| EventBridge Scheduler | Enabled | Weekly retraining on Mondays at 03:00 UTC |
-| Lambda `smartfuel-check-alerts` | Deployed & tested | Identifies price drops matching user subscriptions |
+| Lambda `smartfuel-train` | Deployed | Trains a model with data read through Athena and uploads it to S3 as a candidate |
+| Lambda `smartfuel-evaluate` | Deployed | Compares the candidate with the baseline and the production model, and promotes it when it is better |
+| Step Functions `smartfuel-ml-retraining` | Deployed | Train → Evaluate, with retries |
+| EventBridge Scheduler | Enabled | Starts the retraining workflow on Mondays at 03:00 UTC |
+| Lambda `smartfuel-predict-ml` | Deployed | Predictions with the production model (container image), called by the Phase B workflow |
+| Lambda `smartfuel-check-alerts` | Deployed | Finds price drops that match user subscriptions and publishes the alerts to SNS |
+| Lambda `smartfuel-send-email` | Deployed | Sends the alert emails with SES (verified addresses only, SES sandbox) |
 | DynamoDB Streams | Enabled | Automatically triggers `check-alerts` when prices change |
-| Production model promotion | Pending approval | Candidates are evaluated but not promoted automatically |
-| Step Functions | Blocked | Original orchestration unavailable in the Sandbox |
-| Email notifications | Blocked | SNS and SES unavailable in the Sandbox |
+| Production model promotion | Automatic | Only when the candidate's macro F1 beats the baseline and the production model |
 
 ## 3. Historical Dataset
 
@@ -119,7 +122,7 @@ However:
 - Performance varies across testing dates.
 - Only approximately six days of historical data were available.
 
-**Conclusion:** ML v0 is a working prototype, but further validation and additional historical observations are required before production deployment.
+**Conclusion:** ML v0 clearly beats the baseline and is the model in production, but it was trained on only six days of data. More historical observations will make it more reliable, and the weekly retraining replaces it only when a better candidate appears.
 
 ## 5. Model Artifacts and S3 Storage
 
@@ -152,7 +155,11 @@ Each retraining candidate contains:
 
 This path follows the interface specified in `docs/contracts.md`.
 
-**Current status:** No model has been approved for production. The trained models remain candidates, and the production path has not been populated through the Phase C deployment.
+**Archived models:**
+
+`models/archive/<timestamp>/`
+
+**Current status:** the production model is in `models/production/` and is used by `smartfuel-predict-ml` in the Phase B workflow. When a better candidate is promoted, the previous production model is archived in `models/archive/<timestamp>/`.
 
 ## 6. Automated Model Retraining
 
@@ -160,18 +167,17 @@ This path follows the interface specified in `docs/contracts.md`.
 
 The implemented retraining workflow is:
 
-1. EventBridge Scheduler triggers `smartfuel-train` weekly.
-2. The training Lambda loads historical snapshots from S3 `raw/`.
-3. It prepares the training dataset and trains a new Random Forest.
-4. The model is evaluated against the baseline.
-5. A new candidate is uploaded to S3.
-6. The training Lambda asynchronously invokes `smartfuel-evaluate`.
-7. The evaluation Lambda compares the candidate with the baseline and current production metadata, if available.
-8. The results are saved as `evaluation.json`.
+1. EventBridge Scheduler (`smartfuel-weekly-train`) starts the Step Functions workflow `smartfuel-ml-retraining` every Monday at 03:00 UTC.
+2. **Train:** `smartfuel-train` reads the last 8 days of `clean/` with Athena (Glue table `smartfuel_ml.clean_prices`, workgroup `smartfuel-ml`).
+3. It prepares the training dataset, trains a new Random Forest and evaluates it against the baseline.
+4. The candidate is uploaded to `models/candidates/<timestamp>/`.
+5. **Evaluate:** `smartfuel-evaluate` compares the candidate's macro F1 with the baseline and the current production model.
+6. If the candidate is better than both, the current model is archived in `models/archive/<timestamp>/` and the candidate is copied to `models/production/`.
+7. The result is saved as `evaluation.json`, and the admins receive an email (SNS `admin-alerts`) whether the model was promoted or not.
 
-**No automatic promotion to production is performed.**
+Both steps retry up to twice on Lambda errors.
 
-The original project proposed Athena and Step Functions for retraining orchestration. The current Sandbox implementation reads historical JSON files directly from S3 and uses a direct Lambda-to-Lambda invocation because Step Functions is unavailable.
+This is the design of the original project (Athena + Step Functions). In the ESADE Sandbox, a first version read the raw JSON files from S3 and the training Lambda invoked the evaluation Lambda directly; that code path still exists (`TRAINING_SOURCE=s3`) but is not used in the deployed version.
 
 ### Lambda: `smartfuel-train`
 
@@ -180,7 +186,7 @@ The original project proposed Athena and Step Functions for retraining orchestra
 - Runtime: AWS Lambda container image.
 - Architecture: ARM64.
 - Docker image stored in Amazon ECR.
-- Memory: 2,048 MB.
+- Memory: 512 MB (the maximum allowed in the shared account).
 - Timeout: 900 seconds.
 - Temporary storage: 2,048 MB.
 
@@ -211,9 +217,9 @@ The Lambda reads the candidate's evaluation metrics and compares its Macro F1 ag
 - The always-flat baseline.
 - The current production model, if production metadata exists.
 
-The evaluation result indicates whether the candidate is eligible for manual review.
+If the candidate is better than both and `auto_promote_model` is `true` (the default), the Lambda archives the current production model and promotes the candidate. In every case it saves `evaluation.json` and emails the admins with the result.
 
-It does not independently retrain the model or automatically promote it to production.
+It does not retrain the model.
 
 ### Weekly Scheduler
 
@@ -227,11 +233,9 @@ It does not independently retrain the model or automatically promote it to produ
 | Time | 03:00 UTC |
 | Expression | `cron(0 3 ? * MON *)` |
 | State | ENABLED |
-| Target | `smartfuel-train` |
+| Target | Step Functions `smartfuel-ml-retraining` |
 
-The Scheduler was confirmed as `ENABLED` in the Phase C Sandbox.
-
-Manual training and evaluation executions were tested successfully. The first execution triggered by the weekly schedule has not yet been independently verified.
+The schedule is defined in Terraform (`enable_weekly_scheduler`, default `true`). A CloudWatch alarm emails the team if the retraining workflow fails.
 
 ## 7. Price Alerts
 
@@ -239,7 +243,7 @@ Manual training and evaluation executions were tested successfully. The first ex
 
 Price alerts use the following event-driven flow:
 
-DynamoDB `smartfuel-latest-prices` → DynamoDB Streams → Lambda `smartfuel-check-alerts` → DynamoDB `smartfuel-subscriptions`
+DynamoDB `smartfuel-latest-prices` → DynamoDB Streams → Lambda `smartfuel-check-alerts` (looks up `smartfuel-subscriptions`) → SNS `smartfuel-phase-c-price-alerts` → Lambda `smartfuel-send-email` → Amazon SES
 
 ### Lambda: `smartfuel-check-alerts`
 
@@ -250,17 +254,18 @@ The Lambda:
 3. Compares old and new fuel prices.
 4. Identifies price decreases.
 5. Queries the `station_fuel-index` in the subscriptions table.
-6. Checks whether the new price meets each user's threshold.
-7. Records aggregate alert counts in CloudWatch.
+6. Checks whether the new price meets each user's threshold, or whether the drop is large.
+7. Publishes each alert to SNS.
+8. Records aggregate alert counts in CloudWatch.
 
-The alert condition is satisfied when:
+The alert condition is satisfied when `new_price < old_price` and at least one of these is true:
 
-- `new_price < old_price`
 - `new_price <= target_price`
+- the price dropped by at least 0.05 € (`LARGE_DROP_EUR`)
 
 ### End-to-End Validation
 
-The alert workflow was tested using a fictitious petrol station and subscription.
+The alert workflow was first tested in the Sandbox, using a fictitious petrol station and subscription (email delivery did not exist there yet).
 
 **Test scenario:**
 
@@ -278,9 +283,7 @@ The fictitious test records were subsequently deleted.
 
 ### Email Delivery
 
-Email delivery remains disabled because SNS and SES are unavailable in the ESADE Sandbox.
-
-The Lambda identifies matching subscriptions but does not send notifications.
+`check-alerts` publishes each alert to SNS, and `smartfuel-send-email` sends it with SES from the verified sender address. SES is still in sandbox mode, so alerts only reach verified recipients.
 
 No user email addresses are written to the application logs.
 
@@ -295,7 +298,13 @@ Phase C infrastructure is located in:
 | File | Purpose |
 |---|---|
 | `main.tf` | Alert Lambda, IAM permissions and DynamoDB Streams trigger |
+| `alert-delivery.tf` | SNS price-alerts topic and `send-email` Lambda (SES) |
 | `retraining.tf` | ECR, training/evaluation Lambdas, IAM and weekly Scheduler |
+| `retraining-sfn.tf` | Step Functions retraining workflow |
+| `athena.tf` | Glue database and table over `clean/`, Athena workgroup |
+| `predict-image.tf` | ECR repository for the prediction image |
+| `predict-runtime.tf` | `smartfuel-predict-ml` Lambda used by Phase B |
+| `predict-smoke.tf` | Small test Lambda for the prediction image |
 | `core.tf` | Access to the shared core Terraform outputs |
 | `providers.tf` | Provider configuration |
 | `variables.tf` | Terraform variables |
@@ -344,15 +353,15 @@ Before deploying in another AWS account, the image must be uploaded to an ECR re
 
 When publishing an updated image, use a new image tag or digest and update the corresponding Terraform configuration. Reusing the same ECR tag does not automatically update an existing Lambda deployment.
 
-Each team member uses a separate AWS Sandbox. Resources, ECR images and S3 data are not automatically shared between accounts.
+All Phase C resources, ECR images and S3 data live in the team's shared AWS account (`eu-north-1`).
 
 ## 9. Testing and Validation
 
 ### Local Tests
 
-The repository test suite passed:
+The repository test suite passes (`python -m pytest -q`):
 
-**44 tests passed**
+**69 tests passed**
 
 The Terraform configuration was also validated successfully.
 
@@ -365,7 +374,7 @@ Validation included:
 - Checking Python imports inside the container.
 - Validating Terraform syntax and configuration.
 
-### AWS Tests
+### AWS Tests (first version, in the ESADE Sandbox)
 
 **Training**
 
@@ -405,23 +414,9 @@ A scheduled execution has not yet been independently observed.
 
 ## 10. Current Limitations
 
-### AWS Sandbox Restrictions
+### AWS Account
 
-The ESADE Sandbox does not permit:
-
-- Step Functions.
-- SNS.
-- SQS.
-- SES.
-
-As a result:
-
-- The original Step Functions retraining workflow is not deployed.
-- The implementation uses direct invocation between the training and evaluation Lambdas.
-- Email alerts cannot be delivered.
-- SNS-based administrative notifications and SQS-based dead-letter queues are unavailable.
-
-These components require further coordination with the professor.
+The ESADE Sandbox did not permit Step Functions, SNS, SQS or SES, so Phase C moved, with the rest of the project, to a shared AWS account where all of them are deployed. That account only allows `eu-north-1` and Lambdas of up to 512 MB, and SES is in sandbox mode (verified recipients only).
 
 ### Machine Learning Limitations
 
@@ -429,48 +424,29 @@ These components require further coordination with the professor.
 - Most fuel-price observations remain unchanged.
 - The model struggles to detect some price movements, especially increases.
 - Performance is not stable across testing dates.
-- The current model is not approved for production.
-- Evaluation currently relies on previously calculated metrics.
-- The initial training process reads raw JSON snapshots from S3 rather than using Athena.
+- Evaluation relies on the metrics calculated during training.
 
 ### Integration Limitations
 
-- The Phase B `predict` Lambda must be compatible with the model dependencies and feature schema.
-- Until a production model is published, Phase B may continue using its fallback prediction logic.
-- The first automatic weekly execution still needs to be monitored.
-- The AWS deployment configuration is specific to the Phase C Sandbox.
+- `smartfuel-predict-ml` and the training code must keep the same feature schema and library versions: a change in one needs the other.
 
 ## 11. Next Steps and Team Handover
 
-**1. Production model approval**
+**1. Model improvements**
 
-Agree on minimum quality requirements and validate the model using additional historical data before moving an approved candidate to `models/production/`.
+As more historical snapshots become available, retrain the model and reassess performance against the baseline and production model. Add features such as oil prices, holidays and nearby stations.
 
-**2. Phase B integration**
+**2. Email delivery for every user**
 
-Coordinate with Carla to ensure the prediction Lambda can load the production model and calculate the expected features.
+Request SES production access and send the alerts from our own domain.
 
 **3. Weekly retraining monitoring**
 
-After the first scheduled execution, verify that:
+Keep an eye on the admin emails and the CloudWatch alarm for failed retraining workflows.
 
-- `smartfuel-train` runs successfully.
-- A new model candidate appears in S3.
-- `smartfuel-evaluate` executes successfully.
-- `evaluation.json` is generated.
-- No errors appear in CloudWatch.
+**4. Terraform maintenance**
 
-**4. Sandbox restrictions**
-
-Wait for the professor's guidance before implementing the blocked Step Functions and SNS/SES workflows.
-
-**5. Terraform maintenance**
-
-Keep the required deployment variables set to `true` when maintaining the deployed Phase C environment.
-
-**6. Model improvements**
-
-As more historical snapshots become available, retrain the model and reassess performance against the baseline and production model.
+Keep the Phase C variables at their defaults (`true`) when maintaining the deployed environment.
 
 ## 12. Main Code Locations
 
@@ -480,33 +456,35 @@ As more historical snapshots become available, retrain the model and reassess pe
 | `ml/history_loader.py` | Historical data loading from local files and S3 |
 | `ml/train_model.py` | Training, evaluation and S3 candidate upload |
 | `ml/Dockerfile.train` | Training Lambda container image |
+| `ml/Dockerfile.predict` | Prediction Lambda container image |
+| `src/lambdas/predict/handler.py` | Prediction handler (used by the `smartfuel-predict-ml` image) |
 | `src/lambdas/train/handler.py` | Training Lambda handler |
 | `src/lambdas/train/test_handler.py` | Training Lambda tests |
 | `src/lambdas/evaluate/handler.py` | Evaluation Lambda handler |
 | `src/lambdas/evaluate/test_handler.py` | Evaluation Lambda tests |
 | `src/lambdas/check-alerts/handler.py` | Price-drop detection |
+| `src/lambdas/send-email/handler.py` | Alert email delivery (SES) |
 | `infra/ml-alerts/main.tf` | Alert Lambda infrastructure |
+| `infra/ml-alerts/alert-delivery.tf` | SNS topic and email Lambda |
 | `infra/ml-alerts/retraining.tf` | Retraining and Scheduler infrastructure |
+| `infra/ml-alerts/retraining-sfn.tf` | Retraining workflow (Step Functions) |
+| `infra/ml-alerts/athena.tf` | Glue table and Athena workgroup |
+| `infra/ml-alerts/predict-runtime.tf` | Prediction Lambda used by Phase B |
 | `docs/contracts.md` | Shared data and model interfaces |
 
 ---
 
 ## Final Phase C Summary
 
-Phase C has implemented and validated the main Machine Learning and price-alert components in the ESADE AWS Sandbox.
+Phase C is deployed and running in the team's shared AWS account.
 
 **Completed:**
-- ML v0 training and evaluation.
-- Historical data loading from S3.
-- Automated creation and evaluation of model candidates.
-- AWS Lambda training and evaluation deployment.
-- Enabled weekly retraining Scheduler.
-- Event-driven price-drop detection using DynamoDB Streams.
+- ML v0 training and evaluation against an always-flat baseline.
+- Predictions with the production model in the Phase B workflow (`smartfuel-predict-ml`).
+- Weekly retraining with Step Functions and Athena, with automatic promotion only when the candidate is better.
+- Price alerts by email: DynamoDB Streams → `check-alerts` → SNS → `send-email` → SES.
 - Local tests, Terraform validation and AWS integration tests.
 
-**Remaining dependencies:**
-- Production model approval and final Phase B integration.
-- Monitoring the first scheduled weekly execution.
-- Step Functions and email delivery, currently blocked by the AWS Sandbox.
-
-The deployed system is functional for model training, candidate evaluation and alert detection. Production prediction integration and email delivery remain pending.
+**Remaining:**
+- SES production access, so alerts can reach any user.
+- More historical data to improve the model.
